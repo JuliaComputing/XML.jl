@@ -1,13 +1,13 @@
-<h1 align="center">XMLParser</h1>
+<h1 align="center">XMLFiles.jl</h1>
 
 <br><br>
 
 ## Usage
 
 ```julia
-using XMLParser
+using XMLFiles
 
-doc = XMLParser.parsefile("file.xml")
+doc = XMLFiles.parsefile("file.xml")
 ```
 
 <br><br>
@@ -23,6 +23,6 @@ doc = XMLParser.parsefile("file.xml")
     - `tag` (opening tag)
     - `/tag>` (closing tag)
 3.  Once the above is identified, it's fairly straightforward to create one of:
-    - `XMLParser.Comment`
-    - `XMLParser.CData`
-    - `XMLParser.Element`
+    - `XMLFiles.Comment`
+    - `XMLFiles.CData`
+    - `XMLFiles.Element`

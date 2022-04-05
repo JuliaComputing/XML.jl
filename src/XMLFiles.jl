@@ -1,4 +1,4 @@
-module XMLParser
+module XMLFiles
 
 using OrderedCollections: OrderedDict
 
