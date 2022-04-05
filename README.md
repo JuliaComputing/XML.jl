@@ -10,6 +10,8 @@
 using XMLFiles
 
 doc = XMLFiles.parsefile("file.xml")
+
+write("newfile.xml", doc)
 ```
 
 <br><br>
