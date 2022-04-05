@@ -55,7 +55,7 @@ end
 ## Approach
 
 1. `itr` = `eachline` but splits on `'<'`
-2. To satisfy the XML spec, each element of `itr` must begin with one of:
+2. Each element of `itr` must begin with one of:
     - `?tag` (prolog only)
     - `!tag` (prolog only)
     - `!--` (comment)
@@ -66,3 +66,4 @@ end
     - `XMLFiles.Comment`
     - `XMLFiles.CData`
     - `XMLFiles.Element`
+4. Wrap it all up in an `XMLFiles.Document`
