@@ -4,6 +4,8 @@ using OrderedCollections: OrderedDict
 
 export Comment, CData, Element
 
+indentation = Ref("  ")
+
 #-----------------------------------------------------------------------------# Comment
 """
     Comment(comment::String)
@@ -17,6 +19,7 @@ function Base.show(io::IO, o::Comment)
     depth = get(io, :depth, 0)
     printstyled(io, "  " ^ depth, "<!-- ", o.data, " -->\n", color=:light_black)
 end
+Base.:(==)(a::Comment, b::Comment) = (a.data == b.data)
 
 #-----------------------------------------------------------------------------# CData
 """
@@ -31,6 +34,7 @@ function Base.show(io::IO, o::CData)
     depth = get(io, :depth, 0)
     printstyled(io, "  " ^ depth, "<![CDATA[", o.data, "]]>\n", color=:light_black)
 end
+Base.:(==)(a::CData, b::CData) = (a.data == b.data)
 
 #-----------------------------------------------------------------------------# Element
 """
@@ -56,18 +60,18 @@ Element(tag::AbstractString, children...; attrs...) = Element(tag, OrderedDict(s
 (e::Element)(children...; attrs...) = Element(e.tag, merge(e.attrs, OrderedDict(string(k) => string(v) for (k,v) in attrs)), vcat(e.children, children...))
 function Base.show(io::IO, o::Element)
     depth = get(io, :depth, 1)
-    indent = "  " ^ (depth - 1)
+    indent = indentation[] ^ (depth - 1)
     p(x...) = printstyled(io, x...; color=depth)
     p(indent, '<', o.tag, (" $k=$(repr(v))" for (k,v) in o.attrs)...)
     if length(o.children) == 0 && o.closed
-        p(" />\n")
+        startswith(o.tag, '?') ? p(" ?>") : p(" />")
     elseif !o.closed
         p(">")
     elseif length(o.children) == 1 && o.children[1] isa AbstractString
         child = o.children[1]
         p('>')
         if occursin('\n', child)
-            printstyled(io, '\n', "  " ^ (depth), child, color=depth+1)
+            printstyled(io, '\n', indentation[] ^ (depth), child, color=depth+1)
             print(io, "\n$indent")
         else
             printstyled(io, child; color=depth+1)
@@ -86,18 +90,30 @@ function Base.show(io::IO, o::Element)
         p(indent, "</", o.tag, '>', '\n')
     end
 end
+function Base.:(==)(a::Element, b::Element)
+    a.tag == b.tag &&
+        a.closed == b.closed &&
+        length(a.children) == length(b.children) &&
+        all(a.children .== b.children) &&
+        a.attrs == b.attrs
+end
 
 #-----------------------------------------------------------------------------# Document
 mutable struct Document
     prolog::Vector{Element}
     root::Element
 end
-function Base.show(io::IO, doc::Document)
-    println(io, "XMLParser.Document\n")
+function Base.show(io::IO, doc::Document; summary=true)
+    summary && println(io, "XMLFiles.Document\n")
     for o in doc.prolog
         println(io, o)
     end
     print(io, doc.root)
+end
+Base.write(io::IO, doc::Document) = show(io, doc; summary=false)
+
+function Base.:(==)(a::Document, b::Document)
+    all(a.prolog .== b.prolog) && (a.root == b.root)
 end
 
 #-----------------------------------------------------------------------------# parse
@@ -114,7 +130,7 @@ function xml_from_itr(itr)
     depth = 0
     path = Element[]
     for (i, x) in enumerate(itr)
-        i == 1 && continue
+        i == 1 && isempty(x) && continue
         line = rstrip(x)
         # @info "Before: $i | $line | npath = $(length(path)) | depth = $depth"
         if is_prolog
@@ -168,9 +184,11 @@ function get_attrs(s::AbstractString)
     d = OrderedDict{String,String}()
     rng = findfirst(r"\s.*>", s)
     isnothing(rng) && return d
-    for line in Iterators.split(s[rng], ' ', keepempty=false)
-        k, v = split(line, '=', keepempty=false)
-        d[k] = v[findfirst(r"(?<=\").*(?=\")", v)]
+    for line in split(s[rng], ' ', keepempty=false)
+        if occursin('=', line)
+            k, v = split(line, '=', keepempty=false)
+            d[k] = v[findfirst(r"(?<=\").*(?=\")", v)]
+        end
     end
     return d
 end

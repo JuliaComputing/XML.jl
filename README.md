@@ -1,5 +1,7 @@
 <h1 align="center">XMLFiles.jl</h1>
 
+<p align="center">Read and write XML Files in 100% Julia.</p>
+
 <br><br>
 
 ## Usage
