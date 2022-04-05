@@ -3,6 +3,11 @@ module XMLParser
 using OrderedCollections: OrderedDict
 
 #-----------------------------------------------------------------------------# Comment
+"""
+    Comment(comment::String)
+
+Displays in XML as `<!-- comment -->`.
+"""
 mutable struct Comment
     data::String
 end
@@ -12,6 +17,11 @@ function Base.show(io::IO, o::Comment)
 end
 
 #-----------------------------------------------------------------------------# CData
+"""
+    CData(data::String)
+
+Displays in XML as `![CDATA[data]]`.
+"""
 mutable struct CData
     data::String
 end
@@ -21,35 +31,46 @@ function Base.show(io::IO, o::CData)
 end
 
 #-----------------------------------------------------------------------------# Element
+"""
+    Element(tag::String, attrs = OrderedDict{String,String}(), children::Vector=[]; closed=true)
+
+
+"""
 mutable struct Element
     tag::String
     attrs::OrderedDict{String,String}
     children::Vector
     closed::Bool  # If false, must be a prolog element like `<?xml`, `<!doctype`
-    function Element(tag="", attrs=OrderedDict{String,String}(), children = []; closed=true)
+    function Element(tag::AbstractString="", attrs::OrderedDict{String,String}=OrderedDict{String,String}(), children::Vector = []; closed=true)
         new(tag, attrs, children, closed)
     end
 end
+Element(tag::AbstractString, children...; attrs...) = Element(tag, OrderedDict(string(k) => string(v) for (k,v) in attrs), collect(children))
+(e::Element)(children...; attrs...) = Element(e.tag, merge(e.attrs, OrderedDict(string(k) => string(v) for (k,v) in attrs)), vcat(e.children, children...))
 function Base.show(io::IO, o::Element)
     depth = get(io, :depth, 1)
     indent = "  " ^ (depth - 1)
     p(x...) = printstyled(io, x...; color=depth)
     p(indent, '<', o.tag, (" $k=$(repr(v))" for (k,v) in o.attrs)...)
     if length(o.children) == 0 && o.closed
-        p(" />")
+        p(" />\n")
     elseif !o.closed
         p(">")
     elseif length(o.children) == 1 && o.children[1] isa AbstractString
         child = o.children[1]
         p('>')
+        depth > 1 && !startswith(indent, child) && print(io, indent)
         printstyled(io, child, color=depth+1)
         p(occursin('\n', child) ? "\n$indent</" : "</", o.tag, ">\n")
     else
         p(">\n")
         for child in o.children
-            child isa AbstractString ?
-                p(indent, child, '\n') :
+            if child isa AbstractString
+                startswith(indent, child) || print(io, "  " ^ depth)
+                printstyled(io, indent, child, '\n', color=depth+1)
+            else
                 print(IOContext(io, :depth => depth + 1), child)
+            end
         end
         p(indent, "</", o.tag, '>', '\n')
     end
