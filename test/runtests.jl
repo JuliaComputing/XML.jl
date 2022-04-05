@@ -1,6 +1,7 @@
-using XMLParser
+using XMLFiles
 using Test
 
-@testset "XMLParser.jl" begin
-    xml = XMLParser.parsefile(joinpath(@__DIR__, "example.kml"))
+@testset "XMLFiles.jl" begin
+    xml = XMLFiles.parsefile(joinpath(@__DIR__, "example.kml"))
+    xml2 = XMLFiles.parsefile(joinpath(@__DIR__, "books.xml"))
 end

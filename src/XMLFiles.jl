@@ -66,9 +66,13 @@ function Base.show(io::IO, o::Element)
     elseif length(o.children) == 1 && o.children[1] isa AbstractString
         child = o.children[1]
         p('>')
-        depth > 1 && !startswith(indent, child) && print(io, indent)
-        printstyled(io, child, color=depth+1)
-        p(occursin('\n', child) ? "\n$indent</" : "</", o.tag, ">\n")
+        if occursin('\n', child)
+            printstyled(io, '\n', "  " ^ (depth), child, color=depth+1)
+            print(io, "\n$indent")
+        else
+            printstyled(io, child; color=depth+1)
+        end
+        p("</", o.tag, ">\n")
     else
         p(">\n")
         for child in o.children
@@ -104,14 +108,12 @@ end
 # <!-- (Comment)
 # /tag>
 # content
-
-
-function parsefile(io::Union{String,IO})
+function xml_from_itr(itr)
     prolog = Element[]
     is_prolog = true
     depth = 0
-    path = []
-    for (i, x) in enumerate(readeach(io, '<', keep=false))
+    path = Element[]
+    for (i, x) in enumerate(itr)
         i == 1 && continue
         line = rstrip(x)
         # @info "Before: $i | $line | npath = $(length(path)) | depth = $depth"
@@ -156,6 +158,10 @@ function parsefile(io::Union{String,IO})
     return Document(prolog, path[1])
 end
 
+
+parsefile(io::Union{AbstractString,IO}) = xml_from_itr(readeach(io, '<', keep=false))
+parse(s::AbstractString) = xml_from_itr(split(s, '<', keepempty=false))
+
 get_tag(s::AbstractString) = s[findfirst(r"([^\s>]+)", s)]
 
 function get_attrs(s::AbstractString)
@@ -164,7 +170,7 @@ function get_attrs(s::AbstractString)
     isnothing(rng) && return d
     for line in Iterators.split(s[rng], ' ', keepempty=false)
         k, v = split(line, '=', keepempty=false)
-        d[k] = strip(v[findfirst(r"(?<=\").*(?=\")", v)])
+        d[k] = v[findfirst(r"(?<=\").*(?=\")", v)]
     end
     return d
 end
@@ -174,7 +180,7 @@ function get_content(s::AbstractString)
         return []
     else
         rng = findfirst(r"(?<=\>)[^\<]*", s)
-        return Any[s[rng]]
+        return Any[strip(s[rng])]
     end
 end
 
