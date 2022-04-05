@@ -99,6 +99,11 @@ function Base.:(==)(a::Element, b::Element)
 end
 
 #-----------------------------------------------------------------------------# Document
+"""
+    Document(prolog::Vector{Element}, root::Element)
+
+An XML Document, split into its `prolog` and `root` node.
+"""
 mutable struct Document
     prolog::Vector{Element}
     root::Element
@@ -117,11 +122,11 @@ function Base.:(==)(a::Document, b::Document)
 end
 
 #-----------------------------------------------------------------------------# parse
-# Possible ways for line to start:
-# <?tag (prolog only)
-# <!tag (prolog only)
-# <!CDATA (CData)
-# <!-- (Comment)
+# `itr` is assumed to split input on '<'.  Therefore the only possible ways for a line to start are:
+# ?tag (prolog only)
+# !tag (prolog only)
+# !CDATA (CData)
+# !-- (Comment)
 # /tag>
 # content
 function xml_from_itr(itr)
@@ -203,6 +208,7 @@ function get_content(s::AbstractString)
 end
 
 #-----------------------------------------------------------------------------# ReadEach
+# Like `eachsplit` in Juila 1.8, but for IO rather than String
 struct ReadEach{IOT <: IO, C<:AbstractChar}
     stream::IOT
     ondone::Function
