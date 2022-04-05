@@ -12,7 +12,7 @@ doc = XMLParser.parse(s)
 
 ## Approach
 
-1. `itr = Iterators.split(input_string, '<')
+1. `itr = Iterators.split(input_string, '<')`
 2. To satisfy the XML spec, each element of this iterator must begin with one of:
     - `?tag` (prolog only)
     - `!tag` (prolog only)
