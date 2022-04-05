@@ -14,13 +14,13 @@ doc = XMLParser.parse(s)
 
 1. `itr = Iterators.split(input_string, '<')
 2. To satisfy the XML spec, each element of this iterator must begin with one of:
-  - `?tag` (prolog only)
-  - `!tag` (prolog only)
-  - `!--` (comment)
-  - `![CDATA` (like a comment, but different)
-  - `tag` (opening tag)
-  - `/tag>` (closing tag)
+    - `?tag` (prolog only)
+    - `!tag` (prolog only)
+    - `!--` (comment)
+    - `![CDATA` (like a comment, but different)
+    - `tag` (opening tag)
+    - `/tag>` (closing tag)
 3.  Once the above is identified, it's fairly straightforward to create one of:
-  - `XMLParser.Comment`
-  - `XMLParser.CData`
-  - `XMLParser.Element`
+    - `XMLParser.Comment`
+    - `XMLParser.CData`
+    - `XMLParser.Element`
