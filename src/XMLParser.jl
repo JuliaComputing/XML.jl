@@ -34,7 +34,12 @@ end
 """
     Element(tag::String, attrs = OrderedDict{String,String}(), children::Vector=[]; closed=true)
 
+Create an XML element with the given `tag`, `attrs`, and `children`.  `closed` indicated whether the
+tag needs to be closed (`false` is only allowed for prolog elements).
 
+    (e::Element)(children...; attrs...)
+
+Create a new XML element using an existing `Element` as a template, using copies of the template's `children`/`attrs`.
 """
 mutable struct Element
     tag::String
