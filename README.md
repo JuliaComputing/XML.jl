@@ -1,4 +1,6 @@
-# XMLParser
+<h1 align="center">XMLParser</h1>
+
+<br><br>
 
 ## Usage
 
@@ -9,6 +11,8 @@ s = read("file.xml", String)
 
 doc = XMLParser.parse(s)
 ```
+
+<br><br>
 
 ## Approach
 
