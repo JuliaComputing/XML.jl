@@ -2,6 +2,8 @@ module XMLParser
 
 using OrderedCollections: OrderedDict
 
+export Comment, CData, Element
+
 #-----------------------------------------------------------------------------# Comment
 """
     Comment(comment::String)
