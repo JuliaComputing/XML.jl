@@ -40,7 +40,10 @@ function Base.show(io::IO, o::Element)
     elseif !o.closed
         p(">")
     elseif length(o.children) == 1 && o.children[1] isa AbstractString
-        p('>', o.children[1], "</", o.tag, ">\n")
+        child = o.children[1]
+        p('>')
+        printstyled(io, child, color=depth+1)
+        p(occursin('\n', child) ? "\n$indent</" : "</", o.tag, ">\n")
     else
         p(">\n")
         for child in o.children
@@ -58,7 +61,7 @@ mutable struct Document
     root::Element
 end
 function Base.show(io::IO, doc::Document)
-    printstyled(io, "XMLParser.Document\n"; color=:light_cyan)
+    println(io, "XMLParser.Document\n")
     for o in doc.prolog
         println(io, o)
     end
@@ -74,12 +77,14 @@ end
 # /tag>
 # content
 
-function parse(s::String)
+
+function parsefile(io::Union{String,IO})
     prolog = Element[]
     is_prolog = true
     depth = 0
     path = []
-    for (i, x) in enumerate(Iterators.split(s, '<', keepempty=false))
+    for (i, x) in enumerate(readeach(io, '<', keep=false))
+        i == 1 && continue
         line = rstrip(x)
         # @info "Before: $i | $line | npath = $(length(path)) | depth = $depth"
         if is_prolog
@@ -123,7 +128,11 @@ function parse(s::String)
     return Document(prolog, path[1])
 end
 
-get_tag(s::AbstractString) = s[findfirst(r"([^\s>]+)", s)]
+get_tag(s::AbstractString) = try
+    s[findfirst(r"([^\s>]+)", s)]
+catch
+    error("tag not found in: $(repr(s))")
+end
 
 function get_attrs(s::AbstractString)
     d = OrderedDict{String,String}()
@@ -144,5 +153,37 @@ function get_content(s::AbstractString)
         return Any[s[rng]]
     end
 end
+
+#-----------------------------------------------------------------------------# ReadEach
+struct ReadEach{IOT <: IO, C<:AbstractChar}
+    stream::IOT
+    ondone::Function
+    keep::Bool
+    char::C
+    function ReadEach(stream::IO, char::C; ondone::Function=()->nothing, keep::Bool=false) where {C<:AbstractChar}
+        new{typeof(stream), C}(stream, ondone, keep, char)
+    end
+end
+
+function readeach(stream::IO=stdin; keep::Bool=false)
+    ReadEach(stream, keep=keep)::ReadEach
+end
+
+function readeach(filename::AbstractString, char::AbstractChar; keep::Bool=false)
+    s = open(filename)
+    ReadEach(s, char, ondone=()->close(s), keep=keep)::ReadEach
+end
+
+function Base.iterate(itr::ReadEach, state=nothing)
+    eof(itr.stream) && return (itr.ondone(); nothing)
+    (readuntil(itr.stream, '<'; keep=itr.keep), nothing)
+end
+
+Base.eltype(::Type{<:ReadEach}) = String
+
+Base.IteratorSize(::Type{<:ReadEach}) = SizeUnknown()
+
+Base.isdone(itr::ReadEach, state...) = eof(itr.stream)
+
 
 end

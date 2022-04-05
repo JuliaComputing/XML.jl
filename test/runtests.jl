@@ -2,5 +2,5 @@ using XMLParser
 using Test
 
 @testset "XMLParser.jl" begin
-    # Write your tests here.
+    xml = XMLParser.parsefile(joinpath(@__DIR__, "example.kml"))
 end
