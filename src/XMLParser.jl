@@ -156,11 +156,7 @@ function parsefile(io::Union{String,IO})
     return Document(prolog, path[1])
 end
 
-get_tag(s::AbstractString) = try
-    s[findfirst(r"([^\s>]+)", s)]
-catch
-    error("tag not found in: $(repr(s))")
-end
+get_tag(s::AbstractString) = s[findfirst(r"([^\s>]+)", s)]
 
 function get_attrs(s::AbstractString)
     d = OrderedDict{String,String}()
