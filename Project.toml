@@ -3,6 +3,9 @@ uuid = "72c71f33-b9b6-44de-8c94-c961784809e2"
 authors = ["Josh Day <emailjoshday@gmail.com> and contributors"]
 version = "0.1.0"
 
+[deps]
+OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
+
 [compat]
 julia = "1"
 

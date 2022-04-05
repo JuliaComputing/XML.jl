@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://earth.google.com/kml/2.2">
+  <Document>
+    <name>Example KML file</name>
+    <description><![CDATA[Example KML file]]></description>
+    <!-- here is a comment -->
+    <Style id="style1">
+      <IconStyle>
+        <Icon>
+          <href>//maps.google.com/mapfiles/ms/icons/blue-dot.png</href>
+        </Icon>
+      </IconStyle>
+    </Style>
+    <Style id="style2">
+      <LineStyle>
+        <color>40000000</color>
+        <width>3</width>
+      </LineStyle>
+      <PolyStyle>
+        <color>A600CC33</color>
+        <fill>1</fill>
+        <outline>1</outline>
+      </PolyStyle>
+    </Style>
+    <Style id="style3">
+      <LineStyle>
+        <color>E60000FF</color>
+        <width>15</width>
+      </LineStyle>
+    </Style>
+    <Placemark>
+      <name>Time Square</name>
+      <description><![CDATA[Times Square is a major commercial intersection and neighborhood in Midtown Manhattan, New York City.]]></description>
+      <styleUrl>#style1</styleUrl>
+      <Point>
+        <coordinates>-73.984939,40.758874,0.000000</coordinates>
+      </Point>
+    </Placemark>
+    <Placemark>
+      <name>Central Park</name>
+      <description><![CDATA[Central Park is an urban park in middle-upper Manhattan, within New York City.]]></description>
+      <styleUrl>#style2</styleUrl>
+      <Polygon>
+        <outerBoundaryIs>
+          <LinearRing>
+            <tessellate>1</tessellate>
+            <coordinates>
+              -73.981508,40.768632,0.000000
+              -73.957845,40.800289,0.000000
+              -73.949348,40.796797,0.000000
+              -73.973093,40.764732,0.000000
+            </coordinates>
+          </LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+    <Placemark>
+      <name>Lincoln Tunnel</name>
+      <description><![CDATA[Traffic(under 10 minutes)]]></description>
+      <styleUrl>#style3</styleUrl>
+      <LineString>
+        <tessellate>1</tessellate>
+        <coordinates>
+          -74.022749,40.766578,0.000000
+          -74.021955,40.767206,0.000000
+          -74.020571,40.767279,0.000000
+          -74.000079,40.758980,0.000000
+        </coordinates>
+      </LineString>
+    </Placemark>
+  </Document>
+</kml>
