@@ -7,9 +7,7 @@
 ```julia
 using XMLParser
 
-s = read("file.xml", String)
-
-doc = XMLParser.parse(s)
+doc = XMLParser.parsefile("file.xml")
 ```
 
 <br><br>
