@@ -1,14 +1,17 @@
-name = "XMLFiles"
+name = "XML"
 uuid = "72c71f33-b9b6-44de-8c94-c961784809e2"
 authors = ["Josh Day <emailjoshday@gmail.com> and contributors"]
 version = "0.1.0"
 
 [deps]
+AbstractTrees = "1520ce14-60c1-5f80-bbc7-55ef81b5835c"
+Downloads = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
 OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
+Tokenize = "0796e94c-ce3b-5d07-9a54-7f471281c624"
 
 [compat]
-julia = "1.7"
 OrderedCollections = "1.4"
+julia = "1.7"
 
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"

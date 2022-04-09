@@ -1,69 +1,51 @@
-<h1 align="center">XMLFiles.jl</h1>
+<h1 align="center">XML.jl</h1>
 
-<p align="center">Read and write XML in pure Julia</p>
+<p align="center">Read and write XML in pure Julia.  THIS IS A WORK IN PROGRESS.</p>
 
 <br><br>
 
 ## Quickstart
 
 ```julia
-using XMLFiles
+using XML
 
-doc = XMLFiles.parsefile("file.xml")
+doc = XML.document("file.xml")
 
-# `doc` has two fields:
-doc.prolog
-doc.root
+# The document's "prolog"
+doc.children[1:end-1]
 
-# The root `XMLFiles.Element` has fields:
-doc.root.tag        # String tag
-doc.root.attrs      # OrderedDict{String,String} of attributes
-doc.root.children   # Vector{Any} of children
+# `getindex` can be used to navigate into child elements.
+doc[end]  # this is the root node.  Also retreived via `XML.root(doc)`
 
+
+doc[end][4][2]
 
 write("newfile.xml", doc)
 ```
 
-## Structs
+## Internals
 
-XMLFiles.jl implements only a few simple structs.  See their help e.g. `?Comment` for more info.
+XML.jl puts all XML content into the following struct:
 
 ```julia
-mutable struct Comment
-    data::String
-end
+# The kind of Node
+@enum(NodeType,
+    DOCUMENT,           # children[1:end-1] == prolog, children[end] == root,
+    DOCTYPE,            # <!DOCTYPE content >
+    DECLARATION,        # <?xml attributes>
+    COMMENT,            # <!-- content -->
+    CDATA,              # <![CDATA[content]]>
+    ELEMENT,            # <tag attributes>
+    ELEMENTSELFCLOSED,  # <tag attributes/>
+    TEXT                # I'm something that is between t '>' and a starting tag '<'
+)
 
-mutable struct CData
-    data::String
-end
-
-mutable struct Element
-    tag::String
-    attrs::OrderedDict{String,String}
-    children::Vector
-end
-
-mutable struct Document
-    prolog::Vector{Element}
-    root::Element
+Base.@kwdef mutable struct Node
+    nodetype::NodeType  # see above
+    tag::String = ""    # a node's tag, used for DECLARATION, ELEMENT, and ELEMENTSELFCLOSED
+    attributes::OrderedDict{String, String} = OrderedDict{String,String}() # a node's attributes e.g. `id="some id"`
+    children::Vector{Node} = Node[]  # child elements
+    content::String = ""  # used for DOCTYPE, COMMENT, CDATA, and TEXT
+    depth::Int = -1  # e.g. doc[1][2][3] would have a depth of 3
 end
 ```
-
-
-<br><br>
-
-## Approach
-
-1. `itr` = `eachline` but splits on `'<'`
-2. Each element of `itr` must begin with one of:
-    - `?tag` (prolog only)
-    - `!tag` (prolog only)
-    - `!--` (comment)
-    - `![CDATA` (like a comment, but different)
-    - `tag` (opening tag)
-    - `/tag>` (closing tag)
-3.  Once the above is identified, it's fairly straightforward to create one of:
-    - `XMLFiles.Comment`
-    - `XMLFiles.CData`
-    - `XMLFiles.Element`
-4. Wrap it all up in an `XMLFiles.Document`
