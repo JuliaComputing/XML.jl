@@ -70,7 +70,7 @@ function print_opening_tag(io::IO, o::Node)
     elseif nodetype(o) == ELEMENTSELFCLOSED
         print(io, '<', tag(o)); print_attrs(io, o); print(io, "/>")
     elseif nodetype(o) == TEXT
-        print(io, content(o))
+        print(io, escape(content(o)))
     end
 end
 
@@ -83,9 +83,6 @@ end
 print_attrs(io::IO, o::Node) = print(io, (" $k=$(repr(v))" for (k,v) in attributes(o))...)
 
 root(o::Node) = nodetype(o) == DOCUMENT ? children(o)[end] : error("Only Document Nodes have a root element.")
-
-
-
 
 
 #-----------------------------------------------------------------------------# Node show
@@ -147,7 +144,7 @@ function Base.iterate(o::EachNodeString, state=nothing)
         end
         s * '>'
     else
-        s = rstrip(readuntil(io, '<'))
+        s = unescape(rstrip(readuntil(io, '<')))
         skip(io, -1)
         s
     end
