@@ -37,7 +37,7 @@ XML.jl puts all XML content into the following struct:
     CDATA,              # <![CDATA[content]]>
     ELEMENT,            # <tag attributes>
     ELEMENTSELFCLOSED,  # <tag attributes/>
-    TEXT                # I'm something that is between t '>' and a starting tag '<'
+    TEXT                # I'm something that is between a tag's close '>' and the next tag's '<'
 )
 
 Base.@kwdef mutable struct Node
