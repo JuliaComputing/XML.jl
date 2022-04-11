@@ -2,7 +2,6 @@ module XML
 
 using OrderedCollections: OrderedDict
 using AbstractTrees
-using Tokenize: tokenize
 
 #-----------------------------------------------------------------------------# escape/unescape
 escape_chars = ['&' => "&amp;", '"' => "&quot;", ''' => "&#39;", '<' => "&lt;", '>' => "&gt;"]
@@ -94,13 +93,14 @@ print_attrs(io::IO, o::Node) = print(io, (" $k=$(repr(v))" for (k,v) in o.attrib
 #   <?xml ...>
 #   <!doctype ...>
 #   <tag ...>
+#   </tag>
 #   <tag .../>
 #   text
 #   <!-- ... -->
 #   <![CDATA[...]]>
 struct EachNodeString{IOT <: IO}
     io::IOT
-    buffer::IOBuffer  # TODO: use this
+    buffer::IOBuffer  # TODO: use this?
 end
 EachNodeString(io::IO) = EachNodeString(io, IOBuffer())
 
@@ -145,7 +145,7 @@ Base.isdone(itr::EachNodeString, state...) = eof(itr.io)
 #-----------------------------------------------------------------------------# Node from EachNodeString
 function Node(o::EachNodeString; debug=false)
     out = Node(nodetype=DOCUMENT)
-    add_children!(out, o; until="NEVER", depth=0, debug)
+    add_children!(out, o; until="FOREVER", depth=0, debug)
     out
 end
 
