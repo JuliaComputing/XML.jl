@@ -1,6 +1,6 @@
 <h1 align="center">XML.jl</h1>
 
-<p align="center">Read and write XML in pure Julia.  THIS IS A WORK IN PROGRESS.</p>
+<p align="center">Read and write XML in pure Julia.</p>
 
 <br><br>
 
@@ -11,14 +11,13 @@ using XML
 
 doc = XML.document("file.xml")
 
-# The document's "prolog"
-doc.children[1:end-1]
+# `getindex` indexes into child elements.
 
-# `getindex` can be used to navigate into child elements.
-doc[end]  # this is the root node.  Also retreived via `XML.root(doc)`
+doc[1:end-1]    # The doc's prolog
+doc[end]        # The doc's root.  Same as `XML.root(doc)`
 
 
-doc[end][4][2]
+doc[end][1]  # e.g. first child of root
 
 write("newfile.xml", doc)
 ```

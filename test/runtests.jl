@@ -15,6 +15,7 @@ using Test
         write("test.xml", doc)
         doc2 = document("test.xml")
         @test doc == doc2
+        @test doc2.version == "1.0"
     end
 
     @testset "KML spec" begin

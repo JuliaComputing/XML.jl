@@ -2,6 +2,7 @@ module XML
 
 using OrderedCollections: OrderedDict
 using AbstractTrees
+using Dates
 
 #-----------------------------------------------------------------------------# escape/unescape
 escape_chars = ['&' => "&amp;", '"' => "&quot;", ''' => "&#39;", '<' => "&lt;", '>' => "&gt;"]
@@ -18,7 +19,6 @@ Base.@kwdef mutable struct Node
     attributes::OrderedDict{String, String} = OrderedDict{String,String}()
     children::Vector{Node} = Node[]
     content::String = ""
-    depth::Int = -1
 end
 
 Base.getindex(o::Node, i::Integer) = children(o)[i]
@@ -30,7 +30,7 @@ Base.setproperty!(o::Node, x::Union{AbstractString,Symbol}, val::Union{AbstractS
 
 nchildren(o::Node) = length(children(o))
 
-for field in (:nodetype, :tag, :attributes, :children, :content, :depth)
+for field in (:nodetype, :tag, :attributes, :children, :content)
     @eval $field(o::Node) = getfield(o, $(QuoteNode(field)))
 end
 
@@ -82,7 +82,7 @@ end
 
 print_attrs(io::IO, o::Node) = print(io, (" $k=$(repr(v))" for (k,v) in attributes(o))...)
 
-root(node::Node) = nodetype(o) == DOCUMENT ? children(node)[end] : error("Only Document Nodes have a root element.")
+root(o::Node) = nodetype(o) == DOCUMENT ? children(o)[end] : error("Only Document Nodes have a root element.")
 
 
 
@@ -161,32 +161,23 @@ Base.IteratorSize(::Type{<:EachNodeString}) = Base.SizeUnknown()
 Base.isdone(itr::EachNodeString, state...) = eof(itr.io)
 
 #-----------------------------------------------------------------------------# Node from EachNodeString
-function Node(o::EachNodeString; debug=false)
+function Node(o::EachNodeString)
     out = Node(nodetype=DOCUMENT)
-    add_children!(out, o; until="FOREVER", depth=0, debug)
+    add_children!(out, o; until="FOREVER")
     out
 end
 
 # parse siblings until the `until` String is returned by the iterator (e.g. `</NAME>`)
-function add_children!(out::Node, o::EachNodeString; until::String, depth::Integer, debug=false)
+function add_children!(out::Node, o::EachNodeString; until::String)
     s = ""
     while s != until
         next = iterate(o)
         isnothing(next) && break
         s = next[1]
-        node = if debug
-            try
-                init_node_parse(s)
-            catch
-                error(s)
-            end
-        else
-            init_node_parse(s)
-        end
+        node = init_node_parse(s)
         isnothing(node) && continue
-        setfield!(node, :depth, depth)
         if nodetype(node) == ELEMENT
-            add_children!(node, o; until="</$(tag(node))>", depth=depth+1, debug)
+            add_children!(node, o; until="</$(tag(node))>")
         end
         push!(children(out), node)
     end
@@ -230,14 +221,11 @@ end
 
 
 #-----------------------------------------------------------------------------# document
-function document(file::AbstractString; debug=false)
+function document(file::AbstractString)
     open(file, "r") do io
         itr = EachNodeString(io)
-        Node(itr; debug)
+        Node(itr)
     end
 end
-
-#-----------------------------------------------------------------------------# xsd
-include("xsd.jl")
 
 end
