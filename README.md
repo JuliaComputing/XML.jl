@@ -44,7 +44,7 @@ Base.@kwdef mutable struct Node
     nodetype::NodeType  # see above
     tag::String = ""    # a node's tag, used for DECLARATION, ELEMENT, and ELEMENTSELFCLOSED
     attributes::OrderedDict{String, String} = OrderedDict{String,String}() # a node's attributes e.g. `id="some id"`
-    children::Vector{Node} = Node[]  # child elements
+    children::Vector{Node} = Node[]  # child elements of ELEMENT
     content::String = ""  # used for DOCTYPE, COMMENT, CDATA, and TEXT
     depth::Int = -1  # e.g. doc[1][2][3] would have a depth of 3
 end

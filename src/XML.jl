@@ -21,71 +21,89 @@ Base.@kwdef mutable struct Node
     depth::Int = -1
 end
 
+Base.getindex(o::Node, i::Integer) = children(o)[i]
+Base.lastindex(o::Node) = lastindex(children(o))
+Base.setindex!(o::Node, val::Node, i::Integer) = setindex!(children(o), val, i)
+
+Base.getproperty(o::Node, x::Symbol) = attributes(o)[string(x)]
+Base.setproperty!(o::Node, x::Union{AbstractString,Symbol}, val::Union{AbstractString,Symbol}) = (attributes(o)[string(x)] = string(val))
+
+nchildren(o::Node) = length(children(o))
+
+for field in (:nodetype, :tag, :attributes, :children, :content, :depth)
+    @eval $field(o::Node) = getfield(o, $(QuoteNode(field)))
+end
+
+
 function show_xml(io::IO, o::Node)
-    if o.nodetype == DOCUMENT
-        foreach(x -> show_xml(io, x), o.children)
+    if nodetype(o) == DOCUMENT
+        foreach(x -> show_xml(io, x), children(o))
     else
         print_opening_tag(io, o)
-        foreach(x -> show_xml(io, x), o.children)
+        foreach(x -> show_xml(io, x), children(o))
         print_closing_tag(io, o)
     end
 end
 
 function Base.:(==)(a::Node, b::Node)
-    a.nodetype == b.nodetype &&
-        a.tag == b.tag &&
-        a.attributes == b.attributes &&
-        all(a.children .== b.children) &&
-        a.content == b.content
+    nodetype(a) == nodetype(b) &&
+        tag(a) == tag(b) &&
+        attributes(a) == attributes(b) &&
+        all(children(a) .== children(b)) &&
+        content(a) == content(b)
 end
 
 Base.write(io::IO, o::Node) = show(io, MIME"application/xml"(), o)
 Base.write(file::AbstractString, o::Node) = open(io -> write(io, o), touch(file), "w")
 
 function print_opening_tag(io::IO, o::Node)
-    if o.nodetype == DOCTYPE
-        print(io, "<!DOCTYPE ", o.content, '>')
-    elseif o.nodetype == DECLARATION
-        print(io, "<?", o.tag); print_attrs(io, o); print(io, "?>")
-    elseif o.nodetype == COMMENT
-        print(io, "<!-- ", o.content, " -->")
-    elseif o.nodetype == CDATA
-        print(io, "<![CDATA[", o.content, "]]>")
-    elseif o.nodetype == ELEMENT
-        print(io, '<', o.tag); print_attrs(io, o); print(io, '>')
-    elseif o.nodetype == ELEMENTSELFCLOSED
-        print(io, '<', o.tag); print_attrs(io, o); print(io, "/>")
-    elseif o.nodetype == TEXT
-        print(io, o.content)
+    if nodetype(o) == DOCTYPE
+        print(io, "<!DOCTYPE ", content(o), '>')
+    elseif nodetype(o) == DECLARATION
+        print(io, "<?", tag(o)); print_attrs(io, o); print(io, "?>")
+    elseif nodetype(o) == COMMENT
+        print(io, "<!-- ", content(o), " -->")
+    elseif nodetype(o) == CDATA
+        print(io, "<![CDATA[", content(o), "]]>")
+    elseif nodetype(o) == ELEMENT
+        print(io, '<', tag(o)); print_attrs(io, o); print(io, '>')
+    elseif nodetype(o) == ELEMENTSELFCLOSED
+        print(io, '<', tag(o)); print_attrs(io, o); print(io, "/>")
+    elseif nodetype(o) == TEXT
+        print(io, content(o))
     end
 end
 
 function print_closing_tag(io::IO, o::Node)
-    if o.nodetype == ELEMENT
-        print(io, "</", o.tag, '>')
+    if nodetype(o) == ELEMENT
+        print(io, "</", tag(o), '>')
     end
 end
 
-Base.getindex(o::Node, i::Integer) = o.children[i]
-Base.lastindex(o::Node) = lastindex(o.children)
+print_attrs(io::IO, o::Node) = print(io, (" $k=$(repr(v))" for (k,v) in attributes(o))...)
 
-root(node::Node) = node.nodetype == DOCUMENT ? node.children[end] : error("Only Document Nodes have a root element.")
+root(node::Node) = nodetype(o) == DOCUMENT ? children(node)[end] : error("Only Document Nodes have a root element.")
+
+
+
+
 
 #-----------------------------------------------------------------------------# Node show
 Base.show(io::IO, ::MIME"text/plain", o::Node) = AbstractTrees.print_tree(io, o)
 Base.show(io::IO, ::MIME"application/xml", o::Node) = show_xml(io, o)
 Base.show(io::IO, ::MIME"text/xml", o::Node) = show_xml(io, o)
 
-
+#-----------------------------------------------------------------------------# AbstractTrees
 function AbstractTrees.printnode(io::IO, o::Node)
-    print(io, o.nodetype)
-    print(io, "  ")
     print_opening_tag(io, o)
+    print(io, " (", nchildren(o), ')')
 end
 
-AbstractTrees.children(o::Node) = o.children
+AbstractTrees.children(o::Node) = children(o)
 
-print_attrs(io::IO, o::Node) = print(io, (" $k=$(repr(v))" for (k,v) in o.attributes)...)
+AbstractTrees.nodetype(::Node) = Node
+
+
 
 
 #-----------------------------------------------------------------------------# EachNodeString
@@ -166,11 +184,11 @@ function add_children!(out::Node, o::EachNodeString; until::String, depth::Integ
             init_node_parse(s)
         end
         isnothing(node) && continue
-        node.depth = depth
-        if node.nodetype == ELEMENT
-            add_children!(node, o; until="</$(node.tag)>", depth=depth+1, debug)
+        setfield!(node, :depth, depth)
+        if nodetype(node) == ELEMENT
+            add_children!(node, o; until="</$(tag(node))>", depth=depth+1, debug)
         end
-        push!(out.children, node)
+        push!(children(out), node)
     end
 end
 
@@ -182,6 +200,8 @@ function init_node_parse(s::AbstractString)
         Node(nodetype=DOCTYPE, content=s)
     elseif startswith(s, "<![CDATA")
         Node(nodetype=CDATA, content=replace(s, "<![CDATA[" => "", "]]>" => ""))
+    elseif startswith(s, "<!--")
+        Node(nodetype=COMMENT, content=replace(s, "<!-- " => "", " -->" => ""))
     elseif startswith(s, "<") && endswith(s, "/>")
         Node(nodetype=ELEMENTSELFCLOSED, tag=get_tag(s), attributes=get_attrs(s))
     elseif startswith(s, "</")
@@ -217,6 +237,7 @@ function document(file::AbstractString; debug=false)
     end
 end
 
-
+#-----------------------------------------------------------------------------# xsd
+include("xsd.jl")
 
 end
