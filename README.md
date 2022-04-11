@@ -11,13 +11,14 @@ using XML
 
 doc = XML.document("file.xml")
 
-# `getindex` indexes into child elements.
+# Use `getindex`/`setindex! to get/set child elements
 
 doc[1:end-1]    # The doc's prolog
 doc[end]        # The doc's root.  Same as `XML.root(doc)`
 
 
-doc[end][1]  # e.g. first child of root
+# Use `getproperty`/`setproperty!` to get/set element attributes
+doc[end].some_root_element_attribute
 
 write("newfile.xml", doc)
 ```
@@ -45,6 +46,5 @@ Base.@kwdef mutable struct Node
     attributes::OrderedDict{String, String} = OrderedDict{String,String}() # a node's attributes e.g. `id="some id"`
     children::Vector{Node} = Node[]  # child elements of ELEMENT
     content::String = ""  # used for DOCTYPE, COMMENT, CDATA, and TEXT
-    depth::Int = -1  # e.g. doc[1][2][3] would have a depth of 3
 end
 ```
