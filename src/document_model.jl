@@ -1,15 +1,11 @@
 abstract type AbstractXMLNode end
 
+# AbstractTrees.children(::AbstractXMLNode) = ()
+# AbstractTrees.printnode(io::IO, o::T) where {T<:AbstractXMLNode} = print(io, T)
+
+
 #-----------------------------------------------------------------------------# pretty printing
-indent = "    "
-
-function pretty(x, depth=0)
-    io = IOBuffer()
-    pretty(io, x, depth)
-    println(String(take!(io)))
-end
-
-pretty(io::IO, o::AbstractXMLNode, depth=0) = println(io, indent ^ depth, o)
+const INDENT = "    "
 
 function pretty(io::IO, o::String, depth=0)
     whitespace = indent ^ depth
@@ -21,29 +17,29 @@ function pretty(io::IO, o::String, depth=0)
     end
 end
 
+
 #-----------------------------------------------------------------------------# DTD
-# TODO: all the messy details of DTD
+# TODO: all the messy details of DTD.  For now, just dump everything into `text`
 struct DTD <: AbstractXMLNode
     text::String
 end
 Base.show(io::IO, o::DTD) = print(io, "<!DOCTYPE ", o.text, '>')
+
 
 #-----------------------------------------------------------------------------# Declaration
 mutable struct Declaration <: AbstractXMLNode
     tag::String
     attributes::OrderedDict{Symbol, String}
 end
-function Base.show(io::IO, o::Declaration)
-    print(io, "<!", o.tag)
-    print_attrs(io, o)
-    print(io, '>')
-end
+Base.show(io::IO, o::Declaration) = (print(io, "<!", o.tag); print_attributes(io, o); print(io, '>'))
+attributes(o::Declaration) = o.attributes
 
 #-----------------------------------------------------------------------------# CData
 mutable struct CData <: AbstractXMLNode
     text::String
 end
 Base.show(io::IO, o::CData) = print(io, "<![CDATA[", o.text, "]]>")
+
 
 #-----------------------------------------------------------------------------# Comment
 mutable struct Comment <: AbstractXMLNode
@@ -57,37 +53,43 @@ mutable struct Element <: AbstractXMLNode
     attributes::OrderedDict{Symbol, String}
     children::Vector{Union{CData, Comment, Element, String}}
 end
-function Element(tag::String, children...; kw...)
-    Element(tag, OrderedDict(k => string(v) for (k,v) in pairs(kw)), collect(children))
-end
+Element() = Element("JUNK", OrderedDict{Symbol,String}(), Union{CData, Comment, Element, String}[])
 function Base.show(io::IO, o::Element)
-    print(io, '<', o.tag)
+    print(io, '<', tag(o))
     print_attributes(io, o)
-    print(io, '>')
-    foreach(x -> show(io, x), o.children)
-    print(io, "</", o.tag, '>')
+    if isempty(children(o))
+        print(io, "/>")
+    else
+        print(io, "> (", length(children(o)), " children)")
+    end
 end
-function pretty(io::IO, o::Element, depth=0)
-    print(io, '<', o.tag)
-    print_atributes(io, o)
-    println(io, '>')
-    foreach(x -> pretty(io, x, depth + 1), o.children)
-    println(io, "</", o.tag, '>')
+function print_attributes(io::IO, o::AbstractXMLNode)
+    foreach(pairs(attributes(o))) do (k,v)
+        print(io, ' ', k, '=', '"', v, '"')
+    end
 end
-print_attributes(io::IO, o::AbstractXMLNode) = foreach(pairs(o.attributes)) do (k,v)
-    print(io, ' ', k, '=', '"', v, '"')
-end
+
+AbstractTrees.children(o::Element) = getfield(o, :children)
+tag(o::Element) = getfield(o, :tag)
+attributes(o::Element) = getfield(o, :attributes)
+
+Base.getindex(o::Element, i::Integer) = children(o)[i]
+Base.lastindex(o::Element) = lastindex(children(o))
+Base.setindex!(o::Element, val::Element, i::Integer) = setindex!(children(o), val, i)
+
+Base.getproperty(o::Element, x::Symbol) = attributes(o)[string(x)]
+Base.setproperty!(o::Element, x::Union{AbstractString,Symbol}, val::Union{AbstractString,Symbol}) = (attributes(o)[string(x)] = string(val))
+
+
 
 #-----------------------------------------------------------------------------# Document
 mutable struct Document
     prolog::Vector{Union{Comment, Declaration, DTD}}
     root::Element
 end
-function Base.show(io::IO, o::Document)
-    foreach(x -> show(io, x), o.prolog)
-    show(io, o.root)
-end
-function pretty(io::IO, o::Document)
-    foreach(x -> pretty(io, x), o.prolog)
-    pretty(io, o.root)
-end
+Document() = Document(Union{Comment,Declaration,DTD}[], Element())
+
+Base.show(io::IO, o::Document) = AbstractTrees.print_tree(io, o)
+AbstractTrees.printnode(io::IO, o::Document) = print(io, "XML.Document")
+
+AbstractTrees.children(o::Document) = (o.prolog..., o.root)

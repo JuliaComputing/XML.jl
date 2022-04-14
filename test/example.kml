@@ -1,4 +1,6 @@
+<!DOCTYPE xml>
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- here is a comment in the prolog -->
 <kml xmlns="http://earth.google.com/kml/2.2">
   <Document>
     <name>Example KML file</name>
