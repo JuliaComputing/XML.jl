@@ -104,8 +104,7 @@ Base.isdone(itr::XMLTokenIterator, state...) = eof(itr.io)
 #-----------------------------------------------------------------------------# Document constructor
 function Document(o::XMLTokenIterator)
     doc = Document()
-    add_prolog!(doc, o)
-    add_root!(doc, o)
+    populate!(doc, o)
     return doc
 end
 Document(file::String) = open(io -> Document(XMLTokenIterator(io)), file, "r")
@@ -115,6 +114,7 @@ make_dtd(s) = DTD(replace(s, "<!doctype " => "", "<!DOCTYPE " => "", '>' => ""))
 make_declaration(s) = Declaration(get_tag(s), get_attributes(s))
 make_comment(s) = Comment(replace(s, "<!-- " => "", " -->" => ""))
 make_cdata(s) = CData(replace(s, "<[!CDATA[" => "", "]]>" => ""))
+make_element(s) = Element(get_tag(s), get_attributes(s))
 
 get_tag(x) = x[findfirst(r"[a-zA-z][^\s>/]*", x)]  # Matches: (any letter) → (' ', '/', '>')
 
@@ -133,8 +133,8 @@ end
 
 
 
-#-----------------------------------------------------------------------------# add_prolog!
-function add_prolog!(doc::Document, o::XMLTokenIterator)
+#-----------------------------------------------------------------------------# populate!
+function populate!(doc::Document, o::XMLTokenIterator)
     for (T, s) in o
         if T == DTDTOKEN
             push!(doc.prolog, make_dtd(s))
@@ -143,15 +143,33 @@ function add_prolog!(doc::Document, o::XMLTokenIterator)
         elseif T == COMMENTTOKEN
             push!(doc.prolog, make_comment(s))
         else
-            break
+            doc.root = Element(get_tag(s), get_attributes(s))
+            add_children!(doc.root, o, "</$(tag(doc.root))>")
         end
     end
 end
-#-----------------------------------------------------------------------------# add_root!
-function add_root!(doc::Document, o)
-    nothing
-end
 
+# until = closing tag e.g. `</Name>`
+function add_children!(e::Element, o::XMLTokenIterator, until::String)
+    s = ""
+    c = children(e)
+    while s != until
+        next = iterate(o, -1)  # if state == 0, then io will get reset to original position
+        isnothing(next) && break
+        T, s = next[1]
+        if T == COMMENTTOKEN
+            push!(c, make_comment(s))
+        elseif T == CDATATOKEN
+            push!(c, make_cdata(s))
+        elseif T == ELEMENTSELFCLOSEDTOKEN
+            push!(c, make_element(s))
+        elseif T == ELEMENTTOKEN
+            child = make_element(s)
+            add_children!(child, o, "</$(tag(child))>")
+            push!(c, child)
+        end
+    end
+end
 
 
 # # parse siblings until the `until` String is returned by the iterator (e.g. `</NAME>`)

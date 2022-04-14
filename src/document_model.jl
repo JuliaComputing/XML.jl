@@ -52,8 +52,11 @@ mutable struct Element <: AbstractXMLNode
     tag::String
     attributes::OrderedDict{Symbol, String}
     children::Vector{Union{CData, Comment, Element, String}}
+    function Element(tag="JUNK", attributes=OrderedDict{Symbol,String}(), children=Union{CData, Comment, Element, String}[])
+        new(tag, attributes, children)
+    end
 end
-Element() = Element("JUNK", OrderedDict{Symbol,String}(), Union{CData, Comment, Element, String}[])
+
 function Base.show(io::IO, o::Element)
     print(io, '<', tag(o))
     print_attributes(io, o)
