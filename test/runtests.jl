@@ -1,27 +1,29 @@
-using XML: document
+using XML
 using Downloads: download
 using Test
 
 @testset "XML.jl" begin
     @testset "example.kml" begin
-        doc = document(joinpath(@__DIR__, "example.kml"))
+        doc = Document(joinpath(@__DIR__, "example.kml"))
         write("test.xml", doc)
-        doc2 = document("test.xml")
+        doc2 = Document("test.xml")
         @test doc == doc2
     end
 
     @testset "books.xml" begin
-        doc = document(joinpath(@__DIR__, "books.xml"))
+        doc = Document(joinpath(@__DIR__, "books.xml"))
         write("test.xml", doc)
-        doc2 = document("test.xml")
+        doc2 = Document("test.xml")
         @test doc == doc2
-        @test doc2[1].version == "1.0"
     end
 
     @testset "KML spec" begin
-        doc = document(download("http://schemas.opengis.net/kml/2.2.0/ogckml22.xsd"))
+        doc = Document(download("http://schemas.opengis.net/kml/2.2.0/ogckml22.xsd"))
         write("test.xml", doc)
-        doc2 = document("test.xml")
+        doc2 = Document("test.xml")
         @test doc == doc2
     end
+
+    # cleanup
+    rm("test.xml", force=true)
 end

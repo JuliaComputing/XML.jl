@@ -4,12 +4,13 @@ using OrderedCollections: OrderedDict
 using AbstractTrees
 using Dates
 
+export Document, DTD, Declaration, Comment, CData, Element
+
 #-----------------------------------------------------------------------------# escape/unescape
 escape_chars = ['&' => "&amp;", '"' => "&quot;", ''' => "&#39;", '<' => "&lt;", '>' => "&gt;"]
 escape(x::AbstractString) = replace(x, escape_chars...)
 unescape(x::AbstractString) = replace(x, reverse.(escape_chars)...)
 
-include("document_model.jl")
 
 #-----------------------------------------------------------------------------# XMLTokenIterator
 @enum(TokenType,
@@ -100,20 +101,158 @@ Base.IteratorSize(::Type{<:XMLTokenIterator}) = Base.SizeUnknown()
 
 Base.isdone(itr::XMLTokenIterator, state...) = eof(itr.io)
 
+#-----------------------------------------------------------------------------# AbstractXMLNode
+abstract type AbstractXMLNode end
 
-#-----------------------------------------------------------------------------# Document constructor
+showxml(io::IO, o::AbstractXMLNode; depth=0) = (show(io, o; depth); println(io))
+
+# assumes '\n' occurs in string
+function showxml(io::IO, x::String; depth=0)
+    whitespace = INDENT^depth
+    for row in split(x, keepempty=false)
+        startswith(row, whitespace) ?
+            println(io, row) :
+            println(io, whitespace, row)
+    end
+end
+
+Base.show(io::IO, ::MIME"text/xml", o::AbstractXMLNode) = showxml(io, o)
+Base.show(io::IO, ::MIME"application/xml", o::AbstractXMLNode) = showxml(io, o)
+
+Base.write(io::IO, doc::AbstractXMLNode) = foreach(x -> showxml(io, x), AbstractTrees.children(doc))
+
+function Base.:(==)(a::T, b::T) where {T <: AbstractXMLNode}
+    all(getfield(a, f) == getfield(b, f) for f in fieldnames(T))
+end
+
+#-----------------------------------------------------------------------------# pretty printing
+const INDENT = "    "
+
+function pretty(io::IO, o::String, depth=0)
+    whitespace = indent ^ depth
+    for line in split(o; keepempty=false)
+        while !startswith(line, whitespace)
+            line = ' ' * line
+        end
+        println(io, line)
+    end
+end
+
+
+#-----------------------------------------------------------------------------# DTD
+# TODO: all the messy details of DTD.  For now, just dump everything into `text`
+struct DTD <: AbstractXMLNode
+    text::String
+end
+Base.show(io::IO, o::DTD; depth=0) = print(io, INDENT^depth, "<!DOCTYPE ", o.text, '>')
+
+
+#-----------------------------------------------------------------------------# Declaration
+mutable struct Declaration <: AbstractXMLNode
+    tag::String
+    attributes::OrderedDict{Symbol, String}
+end
+function Base.show(io::IO, o::Declaration; depth=0)
+    print(io, INDENT ^ depth, "<?", o.tag)
+    print_attributes(io, o)
+    print(io, "?>")
+end
+attributes(o::Declaration) = o.attributes
+
+#-----------------------------------------------------------------------------# CData
+mutable struct CData <: AbstractXMLNode
+    text::String
+end
+Base.show(io::IO, o::CData; depth=0) = print(io, INDENT ^ depth, "<![CDATA[", o.text, "]]>")
+
+
+#-----------------------------------------------------------------------------# Comment
+mutable struct Comment <: AbstractXMLNode
+    text::String
+end
+Base.show(io::IO, o::Comment; depth=0) = print(io, INDENT ^ depth, "<!-- ", o.text, " -->")
+
+#-----------------------------------------------------------------------------# Element
+mutable struct Element <: AbstractXMLNode
+    tag::String
+    attributes::OrderedDict{Symbol, String}
+    children::Vector{Union{CData, Comment, Element, String}}
+    function Element(tag="UNDEF", attributes=OrderedDict{Symbol,String}(), children=Union{CData, Comment, Element, String}[])
+        new(tag, attributes, children)
+    end
+end
+function showxml(io::IO, o::Element; depth=0)
+    print(io, INDENT ^ depth, '<', tag(o))
+    print_attributes(io, o)
+    n = length(children(o))
+    if n == 0
+        print(io, "/>")
+    elseif n == 1 && first(children(o)) isa String
+        print(io, '>', children(o)[1], "</", tag(o), '>')
+    else
+        println(io, '>')
+        foreach(x -> showxml(io, x; depth=depth+1), children(o))
+        print(io, INDENT^depth, "</", tag(o), '>')
+    end
+    println(io)
+end
+
+function Base.show(io::IO, o::Element)
+    print(io, '<', tag(o))
+    print_attributes(io, o)
+    n = length(children(o))
+    if n == 0
+        print(io, "/>")
+    else
+        print(io, '>')
+        printstyled(io, " (", length(children(o)), n > 1 ? " children)" : " child)", color=:light_black)
+    end
+end
+function print_attributes(io::IO, o::AbstractXMLNode)
+    foreach(pairs(attributes(o))) do (k,v)
+        print(io, ' ', k, '=', '"', v, '"')
+    end
+end
+
+AbstractTrees.children(o::Element) = getfield(o, :children)
+tag(o::Element) = getfield(o, :tag)
+attributes(o::Element) = getfield(o, :attributes)
+
+Base.getindex(o::Element, i::Integer) = children(o)[i]
+Base.lastindex(o::Element) = lastindex(children(o))
+Base.setindex!(o::Element, val::Element, i::Integer) = setindex!(children(o), val, i)
+
+Base.getproperty(o::Element, x::Symbol) = attributes(o)[string(x)]
+Base.setproperty!(o::Element, x::Union{AbstractString,Symbol}, val::Union{AbstractString,Symbol}) = (attributes(o)[string(x)] = string(val))
+
+
+
+#-----------------------------------------------------------------------------# Document
+mutable struct Document <: AbstractXMLNode
+    prolog::Vector{Union{Comment, Declaration, DTD}}
+    root::Element
+    Document(prolog=Union{Comment,Declaration,DTD}[], root=Element()) = new(prolog, root)
+end
+
 function Document(o::XMLTokenIterator)
     doc = Document()
     populate!(doc, o)
     return doc
 end
+
 Document(file::String) = open(io -> Document(XMLTokenIterator(io)), file, "r")
+
+Base.show(io::IO, o::Document) = AbstractTrees.print_tree(io, o)
+AbstractTrees.printnode(io::IO, o::Document) = print(io, "XML.Document")
+
+AbstractTrees.children(o::Document) = (o.prolog..., o.root)
+
 
 #-----------------------------------------------------------------------------# makers (AbstractXMLNode from a token)
 make_dtd(s) = DTD(replace(s, "<!doctype " => "", "<!DOCTYPE " => "", '>' => ""))
 make_declaration(s) = Declaration(get_tag(s), get_attributes(s))
 make_comment(s) = Comment(replace(s, "<!-- " => "", " -->" => ""))
-make_cdata(s) = CData(replace(s, "<[!CDATA[" => "", "]]>" => ""))
+make_cdata(s) = CData(replace(s, "<![CDATA[" => "", "]]>" => ""))
 make_element(s) = Element(get_tag(s), get_attributes(s))
 
 get_tag(x) = x[findfirst(r"[a-zA-z][^\s>/]*", x)]  # Matches: (any letter) → (' ', '/', '>')
@@ -142,7 +281,7 @@ function populate!(doc::Document, o::XMLTokenIterator)
             push!(doc.prolog, make_declaration(s))
         elseif T == COMMENTTOKEN
             push!(doc.prolog, make_comment(s))
-        else
+        else  # root node
             doc.root = Element(get_tag(s), get_attributes(s))
             add_children!(doc.root, o, "</$(tag(doc.root))>")
         end
@@ -167,278 +306,10 @@ function add_children!(e::Element, o::XMLTokenIterator, until::String)
             child = make_element(s)
             add_children!(child, o, "</$(tag(child))>")
             push!(c, child)
+        elseif T == TEXTTOKEN
+            push!(c, s)
         end
     end
 end
-
-
-# # parse siblings until the `until` String is returned by the iterator (e.g. `</NAME>`)
-# function add_children!(out::Node, o::EachNodeString; until::String)
-#     s = ""
-#     while s != until
-#         next = iterate(o)
-#         isnothing(next) && break
-#         s = next[1]
-#         node = init_node_parse(s)
-#         isnothing(node) && continue
-#         if nodetype(node) == ELEMENT
-#             add_children!(node, o; until="</$(tag(node))>")
-#         end
-#         push!(children(out), node)
-#     end
-# end
-
-# # Initialize the node (before `add_children!` gets run).
-# function init_node_parse(s::AbstractString)
-#     if startswith(s, "<?xml")
-#         Node(nodetype=DECLARATION, tag=get_tag(s), attributes=get_attrs(s))
-#     elseif startswith(s, "<!DOCTYPE") || startswith(s, "<!doctype")
-#         Node(nodetype=DOCTYPE, content=s)
-#     elseif startswith(s, "<![CDATA")
-#         Node(nodetype=CDATA, content=replace(s, "<![CDATA[" => "", "]]>" => ""))
-#     elseif startswith(s, "<!--")
-#         Node(nodetype=COMMENT, content=replace(s, "<!-- " => "", " -->" => ""))
-#     elseif startswith(s, "<") && endswith(s, "/>")
-#         Node(nodetype=ELEMENTSELFCLOSED, tag=get_tag(s), attributes=get_attrs(s))
-#     elseif startswith(s, "</")
-#         nothing
-#     elseif startswith(s, "<")
-#         Node(nodetype=ELEMENT, tag=get_tag(s), attributes=get_attrs(s))
-#     else
-#         Node(nodetype=TEXT, content=s)
-#     end
-# end
-
-# get_tag(x) = x[findfirst(r"[a-zA-z][^\s>/]*", x)]  # Matches: (any letter) → (' ', '/', '>')
-
-# function get_attrs(x)
-#     out = OrderedDict{String,String}()
-#     rng = findfirst(r"(?<=\s).*\"", x)
-#     isnothing(rng) && return out
-#     s = x[rng]
-#     kys = (m.match for m in eachmatch(r"[a-zA-Z][a-zA-Z\.-_]*(?=\=)", s))
-#     vals = (m.match for m in eachmatch(r"(?<=(\=\"))[^\"]*", s))
-#     foreach(zip(kys,vals)) do (k,v)
-#         out[k] = v
-#     end
-#     out
-# end
-
-
-# #-----------------------------------------------------------------------------# Node
-# @enum NodeType DOCUMENT DOCTYPE DECLARATION COMMENT CDATA ELEMENT ELEMENTSELFCLOSED TEXT
-
-# Base.@kwdef mutable struct Node
-#     nodetype::NodeType
-#     tag::String = ""
-#     attributes::OrderedDict{String, String} = OrderedDict{String,String}()
-#     children::Vector{Node} = Node[]
-#     content::String = ""
-# end
-
-# Base.getindex(o::Node, i::Integer) = children(o)[i]
-# Base.lastindex(o::Node) = lastindex(children(o))
-# Base.setindex!(o::Node, val::Node, i::Integer) = setindex!(children(o), val, i)
-
-# Base.getproperty(o::Node, x::Symbol) = attributes(o)[string(x)]
-# Base.setproperty!(o::Node, x::Union{AbstractString,Symbol}, val::Union{AbstractString,Symbol}) = (attributes(o)[string(x)] = string(val))
-
-# nchildren(o::Node) = length(children(o))
-
-# for field in (:nodetype, :tag, :attributes, :children, :content)
-#     @eval $field(o::Node) = getfield(o, $(QuoteNode(field)))
-# end
-
-
-# function show_xml(io::IO, o::Node)
-#     if nodetype(o) == DOCUMENT
-#         foreach(x -> show_xml(io, x), children(o))
-#     else
-#         print_opening_tag(io, o)
-#         foreach(x -> show_xml(io, x), children(o))
-#         print_closing_tag(io, o)
-#     end
-# end
-
-# function Base.:(==)(a::Node, b::Node)
-#     nodetype(a) == nodetype(b) &&
-#         tag(a) == tag(b) &&
-#         attributes(a) == attributes(b) &&
-#         all(children(a) .== children(b)) &&
-#         content(a) == content(b)
-# end
-
-# Base.write(io::IO, o::Node) = show(io, MIME"application/xml"(), o)
-# Base.write(file::AbstractString, o::Node) = open(io -> write(io, o), touch(file), "w")
-
-# function print_opening_tag(io::IO, o::Node)
-#     if nodetype(o) == DOCTYPE
-#         print(io, "<!DOCTYPE ", content(o), '>')
-#     elseif nodetype(o) == DECLARATION
-#         print(io, "<?", tag(o)); print_attrs(io, o); print(io, "?>")
-#     elseif nodetype(o) == COMMENT
-#         print(io, "<!-- ", content(o), " -->")
-#     elseif nodetype(o) == CDATA
-#         print(io, "<![CDATA[", content(o), "]]>")
-#     elseif nodetype(o) == ELEMENT
-#         print(io, '<', tag(o)); print_attrs(io, o); print(io, '>')
-#     elseif nodetype(o) == ELEMENTSELFCLOSED
-#         print(io, '<', tag(o)); print_attrs(io, o); print(io, "/>")
-#     elseif nodetype(o) == TEXT
-#         print(io, escape(content(o)))
-#     end
-# end
-
-# function print_closing_tag(io::IO, o::Node)
-#     if nodetype(o) == ELEMENT
-#         print(io, "</", tag(o), '>')
-#     end
-# end
-
-# print_attrs(io::IO, o::Node) = print(io, (" $k=$(repr(v))" for (k,v) in attributes(o))...)
-
-# root(o::Node) = nodetype(o) == DOCUMENT ? children(o)[end] : error("Only Document Nodes have a root element.")
-
-
-# #-----------------------------------------------------------------------------# Node show
-# Base.show(io::IO, ::MIME"text/plain", o::Node) = AbstractTrees.print_tree(io, o)
-# Base.show(io::IO, ::MIME"application/xml", o::Node) = show_xml(io, o)
-# Base.show(io::IO, ::MIME"text/xml", o::Node) = show_xml(io, o)
-
-# #-----------------------------------------------------------------------------# AbstractTrees
-# function AbstractTrees.printnode(io::IO, o::Node)
-#     print_opening_tag(io, o)
-#     print(io, " (", nchildren(o), ')')
-# end
-
-# AbstractTrees.children(o::Node) = children(o)
-
-# AbstractTrees.nodetype(::Node) = Node
-
-
-
-
-# #-----------------------------------------------------------------------------# EachToken
-# # Iterator that returns one of the following tokens (as a String):
-# #   <?xml ...>
-# #   <!doctype ...>
-# #   <tag ...>
-# #   </tag>
-# #   <tag .../>
-# #   text
-# #   <!-- ... -->
-# #   <![CDATA[...]]>
-# struct EachToken{IOT <: IO}
-#     io::IOT
-#     start_pos::Int
-#     buffer::IOBuffer  # TODO: use this?
-# end
-# EachToken(io::IO) = EachToken(io, IOBuffer())
-
-# function readchar(o::EachToken)
-#     c = peek(o.io, Char)
-#     write(o.buffer, c)
-#     c
-# end
-
-# function Base.iterate(o::EachToken, state=nothing)
-#     io = o.io
-#     skipchars(isspace, io)
-#     eof(io) && return nothing
-#     c = readchar(o)
-
-#     s = if c === '<'
-#         s = readuntil(io, '>')
-#         if startswith(s, "<!--")
-#             while !occursin("--", s)
-#                 s *= readuntil(io, '>')
-#             end
-#         elseif startswith(s, "<![CDATA")
-#             while !occursin("]]", s)
-#                 s *= readuntil(io, '>')
-#             end
-#         end
-#         s * '>'
-#     else
-#         s = unescape(rstrip(readuntil(io, '<')))
-#         skip(io, -1)
-#         s
-#     end
-#     (s, nothing)
-# end
-
-# Base.eltype(::Type{<:EachNodeString}) = String
-
-# Base.IteratorSize(::Type{<:EachNodeString}) = Base.SizeUnknown()
-
-# Base.isdone(itr::EachNodeString, state...) = eof(itr.io)
-
-# #-----------------------------------------------------------------------------# Node from EachNodeString
-# function Node(o::EachNodeString)
-#     out = Node(nodetype=DOCUMENT)
-#     add_children!(out, o; until="FOREVER")
-#     out
-# end
-
-# # parse siblings until the `until` String is returned by the iterator (e.g. `</NAME>`)
-# function add_children!(out::Node, o::EachNodeString; until::String)
-#     s = ""
-#     while s != until
-#         next = iterate(o)
-#         isnothing(next) && break
-#         s = next[1]
-#         node = init_node_parse(s)
-#         isnothing(node) && continue
-#         if nodetype(node) == ELEMENT
-#             add_children!(node, o; until="</$(tag(node))>")
-#         end
-#         push!(children(out), node)
-#     end
-# end
-
-# # Initialize the node (before `add_children!` gets run).
-# function init_node_parse(s::AbstractString)
-#     if startswith(s, "<?xml")
-#         Node(nodetype=DECLARATION, tag=get_tag(s), attributes=get_attrs(s))
-#     elseif startswith(s, "<!DOCTYPE") || startswith(s, "<!doctype")
-#         Node(nodetype=DOCTYPE, content=s)
-#     elseif startswith(s, "<![CDATA")
-#         Node(nodetype=CDATA, content=replace(s, "<![CDATA[" => "", "]]>" => ""))
-#     elseif startswith(s, "<!--")
-#         Node(nodetype=COMMENT, content=replace(s, "<!-- " => "", " -->" => ""))
-#     elseif startswith(s, "<") && endswith(s, "/>")
-#         Node(nodetype=ELEMENTSELFCLOSED, tag=get_tag(s), attributes=get_attrs(s))
-#     elseif startswith(s, "</")
-#         nothing
-#     elseif startswith(s, "<")
-#         Node(nodetype=ELEMENT, tag=get_tag(s), attributes=get_attrs(s))
-#     else
-#         Node(nodetype=TEXT, content=s)
-#     end
-# end
-
-# get_tag(x) = x[findfirst(r"[a-zA-z][^\s>/]*", x)]  # Matches: (any letter) → (' ', '/', '>')
-
-# function get_attrs(x)
-#     out = OrderedDict{String,String}()
-#     rng = findfirst(r"(?<=\s).*\"", x)
-#     isnothing(rng) && return out
-#     s = x[rng]
-#     kys = (m.match for m in eachmatch(r"[a-zA-Z][a-zA-Z\.-_]*(?=\=)", s))
-#     vals = (m.match for m in eachmatch(r"(?<=(\=\"))[^\"]*", s))
-#     foreach(zip(kys,vals)) do (k,v)
-#         out[k] = v
-#     end
-#     out
-# end
-
-
-# #-----------------------------------------------------------------------------# document
-# function document(file::AbstractString)
-#     open(file, "r") do io
-#         itr = EachNodeString(io)
-#         Node(itr)
-#     end
-# end
 
 end

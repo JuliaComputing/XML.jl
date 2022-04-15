@@ -9,7 +9,7 @@
 ```julia
 using XML
 
-doc = XML.document("file.xml")
+doc = XML.Document("file.xml")
 
 # Use `getindex`/`setindex! to get/set child elements
 
