@@ -36,39 +36,34 @@ write("newfile.xml", doc)
 ### Types
 
 ```julia
-# Document Type Definition (https://www.w3schools.com/xml/xml_dtd.asp)
-# XML: <!DOCTYPE $text>
+# <!DOCTYPE $text>
 struct DTD <: AbstractXMLNode
     text::String
 end
 
-# (https://www.tutorialspoint.com/xml/xml_declaration.htm)
-# XML: <?xml $attributes ?>
+# <?xml $attributes ?>
 mutable struct Declaration <: AbstractXMLNode
     tag::String
     attributes::OrderedDict{Symbol, String}
 end
 
-# (https://www.tutorialspoint.com/xml/xml_cdata_sections.htm)
-# XML: <![CDATA[$text]]>
+# <![CDATA[$text]]>
 mutable struct CData <: AbstractXMLNode
     text::String
 end
 
-# XML: <!-- $text -->
+# <!-- $text -->
 mutable struct Comment <: AbstractXMLNode
     text::String
 end
 
-# (https://www.w3schools.com/xml/xml_elements.asp)
-# XML: <$tag $attributes>$children</$tag>
+# <$tag $attributes>$children</$tag>
 mutable struct Element <: AbstractXMLNode
     tag::String
     attributes::OrderedDict{Symbol, String}
     children::Vector{Union{CData, Comment, Element, String}}
 end
 
-# XML documents must have a root node.  Everything comes before the root is the "prolog"
 mutable struct Document <: AbstractXMLNode
     prolog::Vector{Union{Comment, Declaration, DTD}}
     root::Element
