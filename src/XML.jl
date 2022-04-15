@@ -229,7 +229,7 @@ Base.lastindex(o::Element) = lastindex(children(o))
 Base.setindex!(o::Element, val::Element, i::Integer) = setindex!(children(o), val, i)
 
 Base.getproperty(o::Element, x::Symbol) = attributes(o)[x]
-Base.setproperty!(o::Element, x::Union{AbstractString,Symbol}, val::Union{AbstractString,Symbol}) = (attributes(o)[string(x)] = string(val))
+Base.setproperty!(o::Element, x::Symbol, val) = (attributes(o)[x] = string(val))
 
 
 
