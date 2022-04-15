@@ -9,42 +9,68 @@
 ```julia
 using XML
 
-doc = XML.Document("file.xml")
+doc = XML.Document(joinpath(dirname(pathof(XML)), "..", "test", "books.xml"))
 
-# Use `getindex`/`setindex! to get/set child elements
+doc.prolog
+ # <?xml version="1.0"?>
 
-doc[1:end-1]    # The doc's prolog
-doc[end]        # The doc's root.  Same as `XML.root(doc)`
+doc.root
+# <catalog> (12 children)
 
+# Use getindex/setindex! to get/set an Element's children
+doc.root[1]
+# <book id="bk101"> (6 children)
 
-# Use `getproperty`/`setproperty!` to get/set element attributes
-doc[end].some_root_element_attribute
+doc.root[1][1]
+# <author> (1 child)
+
+# use getproperty/setproperty! to get/set an Element's attributes
+
+doc.root.id = "A new attribute called `id`"
 
 write("newfile.xml", doc)
 ```
 
 ## Internals
 
-XML.jl puts all XML content into the following struct:
+### Types
 
 ```julia
-# The kind of Node
-@enum(NodeType,
-    DOCUMENT,           # children[1:end-1] == prolog, children[end] == root,
-    DOCTYPE,            # <!DOCTYPE content >
-    DECLARATION,        # <?xml attributes>
-    COMMENT,            # <!-- content -->
-    CDATA,              # <![CDATA[content]]>
-    ELEMENT,            # <tag attributes>
-    ELEMENTSELFCLOSED,  # <tag attributes/>
-    TEXT                # I'm something that is between a tag's close '>' and the next tag's '<'
-)
+# Document Type Definition (https://www.w3schools.com/xml/xml_dtd.asp)
+# XML: <!DOCTYPE $text>
+struct DTD <: AbstractXMLNode
+    text::String
+end
 
-Base.@kwdef mutable struct Node
-    nodetype::NodeType  # see above
-    tag::String = ""    # a node's tag, used for DECLARATION, ELEMENT, and ELEMENTSELFCLOSED
-    attributes::OrderedDict{String, String} = OrderedDict{String,String}() # a node's attributes e.g. `id="some id"`
-    children::Vector{Node} = Node[]  # child elements of ELEMENT
-    content::String = ""  # used for DOCTYPE, COMMENT, CDATA, and TEXT
+# (https://www.tutorialspoint.com/xml/xml_declaration.htm)
+# XML: <?xml $attributes ?>
+mutable struct Declaration <: AbstractXMLNode
+    tag::String
+    attributes::OrderedDict{Symbol, String}
+end
+
+# (https://www.tutorialspoint.com/xml/xml_cdata_sections.htm)
+# XML: <![CDATA[$text]]>
+mutable struct CData <: AbstractXMLNode
+    text::String
+end
+
+# XML: <!-- $text -->
+mutable struct Comment <: AbstractXMLNode
+    text::String
+end
+
+# (https://www.w3schools.com/xml/xml_elements.asp)
+# XML: <$tag $attributes>$children</$tag>
+mutable struct Element <: AbstractXMLNode
+    tag::String
+    attributes::OrderedDict{Symbol, String}
+    children::Vector{Union{CData, Comment, Element, String}}
+end
+
+# XML documents must have a root node.  Everything comes before the root is the "prolog"
+mutable struct Document <: AbstractXMLNode
+    prolog::Vector{Union{Comment, Declaration, DTD}}
+    root::Element
 end
 ```
