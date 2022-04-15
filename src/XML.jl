@@ -105,6 +105,8 @@ Base.isdone(itr::XMLTokenIterator, state...) = eof(itr.io)
 #-----------------------------------------------------------------------------# AbstractXMLNode
 abstract type AbstractXMLNode end
 
+const INDENT = "    "
+
 showxml(io::IO, o::AbstractXMLNode; depth=0) = (show(io, o; depth); println(io))
 
 # assumes '\n' occurs in string
@@ -127,17 +129,6 @@ function Base.:(==)(a::T, b::T) where {T <: AbstractXMLNode}
 end
 
 #-----------------------------------------------------------------------------# pretty printing
-const INDENT = "    "
-
-function pretty(io::IO, o::String, depth=0)
-    whitespace = indent ^ depth
-    for line in split(o; keepempty=false)
-        while !startswith(line, whitespace)
-            line = ' ' * line
-        end
-        println(io, line)
-    end
-end
 
 
 #-----------------------------------------------------------------------------# DTD
