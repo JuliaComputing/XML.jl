@@ -111,8 +111,8 @@ function showxml(io::IO, x::String; depth=0)
     whitespace = INDENT^depth
     for row in split(x, keepempty=false)
         startswith(row, whitespace) ?
-            println(io, row) :
-            println(io, whitespace, row)
+            println(io, escape(row)) :
+            println(io, whitespace, escape(row))
     end
 end
 
@@ -170,7 +170,7 @@ Base.show(io::IO, o::CData; depth=0) = print(io, INDENT ^ depth, "<![CDATA[", o.
 mutable struct Comment <: AbstractXMLNode
     text::String
 end
-Base.show(io::IO, o::Comment; depth=0) = print(io, INDENT ^ depth, "<!-- ", o.text, " -->")
+Base.show(io::IO, o::Comment; depth=0) = print(io, INDENT ^ depth, "<!-- ", escape(o.text), " -->")
 
 #-----------------------------------------------------------------------------# Element
 mutable struct Element <: AbstractXMLNode
@@ -188,7 +188,7 @@ function showxml(io::IO, o::Element; depth=0)
     if n == 0
         print(io, "/>")
     elseif n == 1 && first(children(o)) isa String
-        print(io, '>', children(o)[1], "</", tag(o), '>')
+        print(io, '>', escape(children(o)[1]), "</", tag(o), '>')
     else
         println(io, '>')
         foreach(x -> showxml(io, x; depth=depth+1), children(o))
@@ -208,6 +208,7 @@ function Base.show(io::IO, o::Element)
         printstyled(io, " (", length(children(o)), n > 1 ? " children)" : " child)", color=:light_black)
     end
 end
+
 function print_attributes(io::IO, o::AbstractXMLNode)
     foreach(pairs(attributes(o))) do (k,v)
         print(io, ' ', k, '=', '"', v, '"')
