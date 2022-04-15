@@ -4,7 +4,8 @@ using OrderedCollections: OrderedDict
 using AbstractTrees
 using Dates
 
-export Document, DTD, Declaration, Comment, CData, Element
+export Document, DTD, Declaration, Comment, CData, Element,
+    children, tag, attributes
 
 #-----------------------------------------------------------------------------# escape/unescape
 escape_chars = ['&' => "&amp;", '"' => "&quot;", ''' => "&#39;", '<' => "&lt;", '>' => "&gt;"]
