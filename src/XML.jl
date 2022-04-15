@@ -182,6 +182,10 @@ mutable struct Element <: AbstractXMLNode
         new(tag, attributes, children)
     end
 end
+function h(tag::String, children...; attrs...)
+    attributes = OrderedDict{Symbol,String}(k => string(v) for (k,v) in pairs(attrs))
+    Element(tag, attributes, collect(children))
+end
 function showxml(io::IO, o::Element; depth=0)
     print(io, INDENT ^ depth, '<', tag(o))
     print_attributes(io, o)
@@ -224,7 +228,7 @@ Base.getindex(o::Element, i::Integer) = children(o)[i]
 Base.lastindex(o::Element) = lastindex(children(o))
 Base.setindex!(o::Element, val::Element, i::Integer) = setindex!(children(o), val, i)
 
-Base.getproperty(o::Element, x::Symbol) = attributes(o)[string(x)]
+Base.getproperty(o::Element, x::Symbol) = attributes(o)[x]
 Base.setproperty!(o::Element, x::Union{AbstractString,Symbol}, val::Union{AbstractString,Symbol}) = (attributes(o)[string(x)] = string(val))
 
 
