@@ -20,7 +20,7 @@ unescape(x::AbstractString) = replace(x, reverse.(escape_chars)...)
     DECLARATIONTOKEN,       # <?xml attributes... ?>
     COMMENTTOKEN,           # <!-- ... -->
     CDATATOKEN,             # <![CDATA[...]]>
-    ELEMENTTOKEN,           # <NAME attributes... >usin
+    ELEMENTTOKEN,           # <NAME attributes... >
     ELEMENTSELFCLOSEDTOKEN, # <NAME attributes... />
     ELEMENTCLOSETOKEN,      # </NAME>
     TEXTTOKEN               # text between a '>' and a '<'
