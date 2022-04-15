@@ -28,7 +28,7 @@ unescape(x::AbstractString) = replace(x, reverse.(escape_chars)...)
 
 mutable struct XMLTokenIterator{IOT <: IO}
     io::IOT
-    start_pos::Int
+    start_pos::Int64  # position(io) always returns Int64?
     buffer::IOBuffer
 end
 XMLTokenIterator(io::IO) = XMLTokenIterator(io, position(io), IOBuffer())
@@ -230,6 +230,7 @@ Base.setindex!(o::Element, val::Element, i::Integer) = setindex!(children(o), va
 
 Base.getproperty(o::Element, x::Symbol) = attributes(o)[x]
 Base.setproperty!(o::Element, x::Symbol, val) = (attributes(o)[x] = string(val))
+Base.propertynames(o::Element) = collect(keys(attributes(o)))
 
 
 
