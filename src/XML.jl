@@ -190,8 +190,11 @@ function showxml(io::IO, o::Element; depth=0)
     println(io)
 end
 
-function Base.show(io::IO, o::Element)
-    print(io, '<', tag(o))
+Base.show(io::IO, o::Element) = AbstractTrees.print_tree(io, o)
+
+function AbstractTrees.printnode(io::IO, o::Element, color=:light_cyan)
+    print(io, '<')
+    printstyled(io, tag(o), color=color)
     print_attributes(io, o)
     n = length(children(o))
     if n == 0
@@ -204,7 +207,8 @@ end
 
 function print_attributes(io::IO, o::AbstractXMLNode)
     foreach(pairs(attributes(o))) do (k,v)
-        print(io, ' ', k, '=', '"', v, '"')
+        printstyled(io, ' ', k, '='; color=:green)
+        printstyled(io, '"', v, '"'; color=:light_green)
     end
 end
 
