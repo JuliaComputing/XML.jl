@@ -175,17 +175,22 @@ function h(tag::String, children...; attrs...)
     Element(tag, attributes, collect(children))
 end
 function showxml(io::IO, o::Element; depth=0)
-    print(io, INDENT ^ depth, '<', tag(o))
+    print(io, INDENT ^ depth, '<')
+    printstyled(io, tag(o), color=:light_cyan)
     print_attributes(io, o)
     n = length(children(o))
     if n == 0
         print(io, "/>")
     elseif n == 1 && first(children(o)) isa String
-        print(io, '>', escape(children(o)[1]), "</", tag(o), '>')
+        print(io, '>', escape(children(o)[1]), '<')
+        printstyled(io, '/', tag(o), color=:light_cyan)
+        print(io, '>')
     else
         println(io, '>')
         foreach(x -> showxml(io, x; depth=depth+1), children(o))
-        print(io, INDENT^depth, "</", tag(o), '>')
+        print(io, INDENT^depth, '<')
+        printstyled(io, '/', tag(o), color=:light_cyan)
+        print(io, '>')
     end
     println(io)
 end
