@@ -105,8 +105,6 @@ Base.isdone(itr::XMLTokenIterator, state...) = eof(itr.io)
 #-----------------------------------------------------------------------------# AbstractXMLNode
 abstract type AbstractXMLNode end
 
-const INDENT = "    "
-
 showxml(io::IO, o::AbstractXMLNode; depth=0) = (show(io, o; depth); println(io))
 
 # assumes '\n' occurs in string
@@ -128,8 +126,7 @@ function Base.:(==)(a::T, b::T) where {T <: AbstractXMLNode}
     all(getfield(a, f) == getfield(b, f) for f in fieldnames(T))
 end
 
-#-----------------------------------------------------------------------------# pretty printing
-
+const INDENT = "    "
 
 #-----------------------------------------------------------------------------# DTD
 # TODO: all the messy details of DTD.  For now, just dump everything into `text`
@@ -291,7 +288,7 @@ function add_children!(e::Element, o::XMLTokenIterator, until::String)
     s = ""
     c = children(e)
     while s != until
-        next = iterate(o, -1)  # if state == 0, then io will get reset to original position
+        next = iterate(o, -1)  # if state == 0, io will get reset to original position
         isnothing(next) && break
         T, s = next[1]
         if T == COMMENTTOKEN
