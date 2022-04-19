@@ -1,7 +1,7 @@
 module XML
 
 using OrderedCollections: OrderedDict
-using AbstractTrees
+import AbstractTrees: print_tree, printnode, children
 using Dates
 
 export Document, DTD, Declaration, Comment, CData, Element,
@@ -105,22 +105,11 @@ Base.isdone(itr::XMLTokenIterator, state...) = eof(itr.io)
 #-----------------------------------------------------------------------------# AbstractXMLNode
 abstract type AbstractXMLNode end
 
-showxml(io::IO, o::AbstractXMLNode; depth=0) = (show(io, o; depth); println(io))
-
-# assumes '\n' occurs in string
-function showxml(io::IO, x::String; depth=0)
-    whitespace = INDENT^depth
-    for row in split(x, keepempty=false)
-        startswith(row, whitespace) ?
-            println(io, escape(row)) :
-            println(io, whitespace, escape(row))
-    end
-end
-
+Base.show(io::IO, ::MIME"text/plain", o::AbstractXMLNode) = showxml(io, o)
 Base.show(io::IO, ::MIME"text/xml", o::AbstractXMLNode) = showxml(io, o)
 Base.show(io::IO, ::MIME"application/xml", o::AbstractXMLNode) = showxml(io, o)
 
-Base.write(io::IO, doc::AbstractXMLNode) = foreach(x -> showxml(io, x), AbstractTrees.children(doc))
+Base.write(io::IO, doc::AbstractXMLNode) = foreach(x -> showxml(io, x), children(doc))
 
 function Base.:(==)(a::T, b::T) where {T <: AbstractXMLNode}
     all(getfield(a, f) == getfield(b, f) for f in fieldnames(T))
@@ -128,12 +117,26 @@ end
 
 const INDENT = "    "
 
+showxml(x; depth=0) = (io=IOBuffer(); showxml(io, x); print(String(take!(io))))
+
+# assumes '\n' occurs in String
+function showxml(io::IO, x::String; depth=0)
+    whitespace = INDENT^depth
+    for row in split(x, keepempty=false)
+        println(io)
+        startswith(row, whitespace) ?
+            printstyled(io, escape(row), color=:light_black) :
+            printstyled(io, whitespace, escape(row), color=:light_black)
+    end
+end
+
+
 #-----------------------------------------------------------------------------# DTD
 # TODO: all the messy details of DTD.  For now, just dump everything into `text`
 struct DTD <: AbstractXMLNode
     text::String
 end
-Base.show(io::IO, o::DTD; depth=0) = print(io, INDENT^depth, "<!DOCTYPE ", o.text, '>')
+showxml(io::IO, o::DTD; depth=0) = print(io, INDENT^depth, "<!DOCTYPE ", o.text, '>')
 
 
 #-----------------------------------------------------------------------------# Declaration
@@ -141,7 +144,7 @@ mutable struct Declaration <: AbstractXMLNode
     tag::String
     attributes::OrderedDict{Symbol, String}
 end
-function Base.show(io::IO, o::Declaration; depth=0)
+function showxml(io::IO, o::Declaration; depth=0)
     print(io, INDENT ^ depth, "<?", o.tag)
     print_attributes(io, o)
     print(io, "?>")
@@ -152,14 +155,14 @@ attributes(o::Declaration) = o.attributes
 mutable struct CData <: AbstractXMLNode
     text::String
 end
-Base.show(io::IO, o::CData; depth=0) = print(io, INDENT ^ depth, "<![CDATA[", o.text, "]]>")
+showxml(io::IO, o::CData; depth=0) = printstyled(io, INDENT ^ depth, "<![CDATA[", o.text, "]]>", color=:light_black)
 
 
 #-----------------------------------------------------------------------------# Comment
 mutable struct Comment <: AbstractXMLNode
     text::String
 end
-Base.show(io::IO, o::Comment; depth=0) = print(io, INDENT ^ depth, "<!-- ", escape(o.text), " -->")
+showxml(io::IO, o::Comment; depth=0) = printstyled(io, INDENT ^ depth, "<!-- ", escape(o.text), " -->", color=:light_black)
 
 #-----------------------------------------------------------------------------# Element
 mutable struct Element <: AbstractXMLNode
@@ -181,23 +184,30 @@ function showxml(io::IO, o::Element; depth=0)
     n = length(children(o))
     if n == 0
         print(io, "/>")
-    elseif n == 1 && first(children(o)) isa String
-        print(io, '>', escape(children(o)[1]), '<')
-        printstyled(io, '/', tag(o), color=:light_cyan)
+    elseif n == 1 && children(o)[1] isa String
+        s = children(o)[1]
+        print(io, '>')
+        if occursin('\n', s)
+            showxml(io, s, depth=depth+1)
+            print(io, '\n', INDENT ^ depth, "</")
+        else
+            printstyled(io, escape(children(o)[1]), color=:light_black)
+            print(io, "</")
+        end
+        printstyled(io, tag(o), color=:light_cyan)
         print(io, '>')
     else
-        println(io, '>')
-        foreach(x -> showxml(io, x; depth=depth+1), children(o))
-        print(io, INDENT^depth, '<')
-        printstyled(io, '/', tag(o), color=:light_cyan)
+        print(io, '>')
+        foreach(x -> (println(io); showxml(io, x; depth=depth+1)), children(o))
+        print(io, '\n', INDENT^depth, "</")
+        printstyled(io, tag(o), color=:light_cyan)
         print(io, '>')
     end
-    println(io)
 end
 
-Base.show(io::IO, o::Element) = AbstractTrees.print_tree(io, o)
+Base.show(io::IO, o::Element) = print_tree(io, o)
 
-function AbstractTrees.printnode(io::IO, o::Element, color=:light_cyan)
+function printnode(io::IO, o::Element, color=:light_cyan)
     print(io, '<')
     printstyled(io, tag(o), color=color)
     print_attributes(io, o)
@@ -217,7 +227,7 @@ function print_attributes(io::IO, o::AbstractXMLNode)
     end
 end
 
-AbstractTrees.children(o::Element) = getfield(o, :children)
+children(o::Element) = getfield(o, :children)
 tag(o::Element) = getfield(o, :tag)
 attributes(o::Element) = getfield(o, :attributes)
 
@@ -246,10 +256,12 @@ end
 
 Document(file::String) = open(io -> Document(XMLTokenIterator(io)), file, "r")
 
-Base.show(io::IO, o::Document) = AbstractTrees.print_tree(io, o)
-AbstractTrees.printnode(io::IO, o::Document) = print(io, "XML.Document")
+Base.show(io::IO, o::Document) = print_tree(io, o)
+printnode(io::IO, o::Document) = print(io, "XML.Document")
 
-AbstractTrees.children(o::Document) = (o.prolog..., o.root)
+children(o::Document) = (o.prolog..., o.root)
+
+showxml(io::IO, o::Document; depth=0) = foreach(x -> (showxml(io, x), println(io)), children(o))
 
 
 #-----------------------------------------------------------------------------# makers (AbstractXMLNode from a token)
