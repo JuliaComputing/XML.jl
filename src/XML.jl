@@ -90,7 +90,7 @@ function next_token(o::XMLTokenIterator)
     else
         readuntil(o, '<')
         skip(io, -1)
-        TEXTTOKEN => unescape(rstrip(String(take!(buffer)[1:end-1])))
+        TEXTTOKEN => unescape(String(take!(buffer)[1:end-1]))
     end
     return pair
 end
@@ -109,7 +109,7 @@ Base.show(io::IO, ::MIME"text/plain", o::AbstractXMLNode) = showxml(io, o)
 Base.show(io::IO, ::MIME"text/xml", o::AbstractXMLNode) = showxml(io, o)
 Base.show(io::IO, ::MIME"application/xml", o::AbstractXMLNode) = showxml(io, o)
 
-Base.write(io::IO, doc::AbstractXMLNode) = foreach(x -> showxml(io, x), children(doc))
+Base.write(io::IO, node::AbstractXMLNode) = foreach(x -> showxml(io, x), children(node))
 
 function Base.:(==)(a::T, b::T) where {T <: AbstractXMLNode}
     all(getfield(a, f) == getfield(b, f) for f in fieldnames(T))
@@ -120,15 +120,7 @@ const INDENT = "    "
 showxml(x; depth=0) = (io=IOBuffer(); showxml(io, x); print(String(take!(io))))
 
 # assumes '\n' occurs in String
-function showxml(io::IO, x::String; depth=0)
-    whitespace = INDENT^depth
-    for row in split(x, keepempty=false)
-        println(io)
-        startswith(row, whitespace) ?
-            printstyled(io, escape(row), color=:light_black) :
-            printstyled(io, whitespace, escape(row), color=:light_black)
-    end
-end
+showxml(io::IO, x::String; depth=0) = show(io, x)
 
 
 #-----------------------------------------------------------------------------# DTD
@@ -186,14 +178,7 @@ function showxml(io::IO, o::Element; depth=0)
         print(io, "/>")
     elseif n == 1 && children(o)[1] isa String
         s = children(o)[1]
-        print(io, '>')
-        if occursin('\n', s)
-            showxml(io, s, depth=depth+1)
-            print(io, '\n', INDENT ^ depth, "</")
-        else
-            printstyled(io, escape(children(o)[1]), color=:light_black)
-            print(io, "</")
-        end
+        print(io, '>', s, "</")
         printstyled(io, tag(o), color=:light_cyan)
         print(io, '>')
     else
