@@ -120,7 +120,7 @@ const INDENT = "    "
 showxml(x; depth=0) = (io=IOBuffer(); showxml(io, x); print(String(take!(io))))
 
 # assumes '\n' occurs in String
-showxml(io::IO, x::String; depth=0) = show(io, x)
+showxml(io::IO, x::String; depth=0) = print(io, INDENT^depth, x)
 
 
 #-----------------------------------------------------------------------------# DTD
@@ -219,10 +219,15 @@ attributes(o::Element) = getfield(o, :attributes)
 Base.getindex(o::Element, i::Integer) = children(o)[i]
 Base.lastindex(o::Element) = lastindex(children(o))
 Base.setindex!(o::Element, val::Element, i::Integer) = setindex!(children(o), val, i)
+Base.push!(o::Element, val::Element) = push!(children(o), val)
 
 Base.getproperty(o::Element, x::Symbol) = attributes(o)[x]
 Base.setproperty!(o::Element, x::Symbol, val) = (attributes(o)[x] = string(val))
 Base.propertynames(o::Element) = collect(keys(attributes(o)))
+
+Base.get(o::Element, key::Symbol, val) = hasproperty(o, key) ? getproperty(o, key) : val
+Base.get!(o::Element, key::Symbol, val) = hasproperty(o, key) ? getproperty(o, key) : setproperty!(o, key, val)
+
 
 
 
@@ -312,5 +317,8 @@ function add_children!(e::Element, o::XMLTokenIterator, until::String)
         end
     end
 end
+
+#-----------------------------------------------------------------------------# Node
+include("node.jl")
 
 end
