@@ -115,7 +115,7 @@ function Base.:(==)(a::T, b::T) where {T <: AbstractXMLNode}
     all(getfield(a, f) == getfield(b, f) for f in fieldnames(T))
 end
 
-const INDENT = "    "
+const INDENT = "  "
 
 showxml(x; depth=0) = (io=IOBuffer(); showxml(io, x); print(String(take!(io))))
 

@@ -31,8 +31,6 @@ doc.root.id = "A new attribute called `id`"
 write("newfile.xml", doc)
 ```
 
-## Internals
-
 ### Types
 
 ```julia

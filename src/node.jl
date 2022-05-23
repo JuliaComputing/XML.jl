@@ -87,7 +87,7 @@ function showxml(io::IO, o::Node; depth=0)
         if isnothing(o.children)
             p(" />")
         else
-            if length(o.children) == 1 && o.children[1] isa String
+            if length(o.children) == 1 && o.children[1] isa String && !occursin('\n', o.children[1])
                 p('>')
                 showxml(io, o.children[1])
                 p("</", o.tag, '>')
@@ -115,6 +115,24 @@ function Node(itr::XMLTokenIterator)
     return doc
 end
 
+function printnode(io::IO, o::Node)
+    p(args...) = print(io, args...)
+    if o.type == DOCUMENT_NODE
+        p("DOCUMENT")
+    elseif o.type == DTD_NODE
+        p("<!doctype ", o.children, '>')
+    elseif o.type == DECLARATION_NODE
+        p("<?", o.tag, attr_string(o), "?>")
+    elseif o.type == COMMENT_NODE
+        p("<!-- ", o.children, " -->")
+    elseif o.type == CDATA_NODE
+        p("<![CDATA[", o.children, "]]>")
+    elseif o.type == ELEMENT_NODE
+        p('<', o.tag, attr_string(o))
+    end
+    o.type != DOCUMENT_NODE && p('>')
+end
+children(o::Node) = o.type in [ELEMENT_NODE, DOCUMENT_NODE] ? o.children : ()
 
 readnode(file::String) = open(io -> Node(XMLTokenIterator(io)), file, "r")
 
@@ -136,7 +154,7 @@ function add_children!(e::Node, o::XMLTokenIterator, until::String)
             add_children!(child, o, "</$(child.tag)>")
             push!(c, child)
         elseif T == TEXTTOKEN
-            push!(c, unescape(s))
+            push!(c, unescape(rstrip(s)))
         elseif T == DTDTOKEN
             push!(c, dtd(replace(s, "<!doctype " => "", "<!DOCTYPE " => "", '>' => "")))
         elseif T == DECLARATIONTOKEN
