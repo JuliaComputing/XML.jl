@@ -122,6 +122,8 @@ showxml(x; depth=0) = (io=IOBuffer(); showxml(io, x); print(String(take!(io))))
 # assumes '\n' occurs in String
 showxml(io::IO, x::String; depth=0) = print(io, INDENT^depth, x)
 
+printnode(io::IO, o::AbstractXMLNode) = showxml(io, o)
+
 
 #-----------------------------------------------------------------------------# DTD
 # TODO: all the messy details of DTD.  For now, just dump everything into `text`
