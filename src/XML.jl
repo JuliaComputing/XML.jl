@@ -169,6 +169,7 @@ function h(tag::String, children...; attrs...)
     attributes = OrderedDict{Symbol,String}(k => string(v) for (k,v) in pairs(attrs))
     Element(tag, attributes, collect(children))
 end
+
 function showxml(io::IO, o::Element; depth=0)
     print(io, INDENT ^ depth, '<')
     printstyled(io, tag(o), color=:light_cyan)
@@ -183,7 +184,10 @@ function showxml(io::IO, o::Element; depth=0)
         print(io, '>')
     else
         print(io, '>')
-        foreach(x -> (println(io); showxml(io, x; depth=depth+1)), children(o))
+        for child in children(o)
+            println(io)
+            showxml(io, child; depth=depth + 1)
+        end
         print(io, '\n', INDENT^depth, "</")
         printstyled(io, tag(o), color=:light_cyan)
         print(io, '>')
@@ -246,7 +250,8 @@ end
 
 Document(file::String) = open(io -> Document(XMLTokenIterator(io)), file, "r")
 
-Base.show(io::IO, o::Document) = print_tree(io, o)
+Base.show(io::IO, ::MIME"text/plain", o::Document) = print_tree(io, o; maxdepth=1)
+
 printnode(io::IO, o::Document) = print(io, "XML.Document")
 
 children(o::Document) = (o.prolog..., o.root)
