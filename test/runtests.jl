@@ -10,6 +10,10 @@ using Test
             doc2 = Document("test.xml")
             @test doc == doc2
         end
+        @testset "equality" begin
+            @test XML.h("tag"; x=1, y=2) == XML.h("tag"; y=2, x=1)
+            @test XML.h("tag"; x=1, y=2) != XML.h("tag"; y=1, x=1)
+        end
 
         @testset "books.xml" begin
             doc = Document(joinpath(@__DIR__, "books.xml"))
