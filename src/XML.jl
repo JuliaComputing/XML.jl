@@ -34,7 +34,7 @@ end
 XMLTokenIterator(io::IO) = XMLTokenIterator(io, position(io), IOBuffer())
 
 readchar(o::XMLTokenIterator) = (c = read(o.io, Char); write(o.buffer, c); c)
-reset(o::XMLTokenIterator) = seek(o.io, o.start_pos)
+reset(o::XMLTokenIterator) = o.start_pos == 0 ? seekstart(o.io) : seek(o.io, o.start_pos)
 
 function readuntil(o::XMLTokenIterator, char::Char)
     c = readchar(o)
@@ -54,9 +54,9 @@ function readuntil(o::XMLTokenIterator, pattern::String)
 end
 
 function Base.iterate(o::XMLTokenIterator, state=0)
-    state == 0 && seek(o.io, o.start_pos)
+    state == 0 && reset(o)
     pair = next_token(o)
-    isnothing(pair) ? nothing : (pair, state+1)
+    isnothing(pair) ? nothing : (pair, state + 1)
 end
 
 function next_token(o::XMLTokenIterator)
@@ -251,6 +251,7 @@ function Document(o::XMLTokenIterator)
 end
 
 Document(file::String) = open(io -> Document(XMLTokenIterator(io)), file, "r")
+Document(io::IO) = Document(XMLTokenIterator(io))
 
 Base.show(io::IO, ::MIME"text/plain", o::Document) = print_tree(io, o; maxdepth=1)
 
