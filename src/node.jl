@@ -5,6 +5,7 @@
     COMMENT_NODE,           # <!-- ... -->
     CDATA_NODE,             # <![CDATA[...]]>
     ELEMENT_NODE,           # <NAME attributes... >
+    TEXT_NODE,              # text
 )
 
 #-----------------------------------------------------------------------------# Node

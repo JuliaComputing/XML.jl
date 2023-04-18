@@ -1,4 +1,4 @@
-/Manifest.toml
+*Manifest.toml
 *generated_xsd.jl
 *.xml
 *.gz
