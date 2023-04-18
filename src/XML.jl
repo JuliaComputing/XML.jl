@@ -1,13 +1,11 @@
 module XML
 
 using OrderedCollections: OrderedDict
-using Base: @kwdef, StringVector
 using Mmap
 using Tables
-# import AbstractTrees: print_tree, printnode, children
+using AbstractTrees: AbstractTrees
 
-export Document, DTD, Declaration, Comment, CData, Element,
-    children, tag, attributes
+export Node, NodeType
 
 #-----------------------------------------------------------------------------# escape/unescape
 escape_chars = ['&' => "&amp;", '"' => "&quot;", ''' => "&#39;", '<' => "&lt;", '>' => "&gt;"]
@@ -15,29 +13,35 @@ escape(x::AbstractString) = replace(x, escape_chars...)
 unescape(x::AbstractString) = replace(x, reverse.(escape_chars)...)
 
 #-----------------------------------------------------------------------------# NodeType
-@enum(NodeType,
-    DOCUMENT_NODE,          # prolog & root ELEMENT_NODE
-    DTD_NODE,               # <!DOCTYPE ...>
-    DECLARATION_NODE,       # <?xml attributes... ?>
-    COMMENT_NODE,           # <!-- ... -->
-    CDATA_NODE,             # <![CDATA[...]]>
-    ELEMENT_NODE,           # <NAME attributes... > children... </NAME>
-    TEXT_NODE,              # text
-    UNKNOWN_NODE,           # unknown
-)
+"""
+    NodeType:
+    - DOCUMENT_NODE         # prolog & root ELEMENT_NODE
+    - DTD_NODE              # <!DOCTYPE ...>
+    - DECLARATION_NODE      # <?xml attributes... ?>
+    - COMMENT_NODE          # <!-- ... -->
+    - CDATA_NODE            # <![CDATA[...]]>
+    - ELEMENT_NODE          # <NAME attributes... > children... </NAME>
+    - TEXT_NODE             # text
+    - UNKNOWN_NODE          # unknown
+"""
+@enum(NodeType, DOCUMENT_NODE, DTD_NODE, DECLARATION_NODE, COMMENT_NODE, CDATA_NODE,
+    ELEMENT_NODE, TEXT_NODE, UNKNOWN_NODE)
 
 #-----------------------------------------------------------------------------# XMLToken
-@enum(XMLToken,
-    TOK_TEXT,                   # text
-    TOK_COMMENT,                # <!-- ... -->
-    TOK_CDATA,                  # <![CDATA[...]]>
-    TOK_DECLARATION,            # <?xml attributes... ?>
-    TOK_DTD,                    # <!DOCTYPE ...>
-    TOK_START_ELEMENT,          # <NAME attributes... >
-    TOK_END_ELEMENT,            # </NAME>
-    TOK_SELF_CLOSED_ELEMENT,    # <NAME attributes... />
+"""
+    XMLToken (an abuse of the word token, used as a superset of NodeType):
+    TOK_TEXT                    # text
+    TOK_COMMENT                 # <!-- ... -->
+    TOK_CDATA                   # <![CDATA[...]]>
+    TOK_DECLARATION             # <?xml attributes... ?>
+    TOK_DTD                     # <!DOCTYPE ...>
+    TOK_START_ELEMENT           # <NAME attributes... >
+    TOK_END_ELEMENT             # </NAME>
+    TOK_SELF_CLOSED_ELEMENT     # <NAME attributes... />
     TOK_UNKNOWN                 # Something to initilize with
-)
+"""
+@enum(XMLToken, TOK_TEXT, TOK_COMMENT, TOK_CDATA, TOK_DECLARATION, TOK_DTD,
+    TOK_START_ELEMENT, TOK_END_ELEMENT, TOK_SELF_CLOSED_ELEMENT, TOK_UNKNOWN)
 
 #-----------------------------------------------------------------------------# Tokens
 struct Tokens
@@ -48,31 +52,48 @@ end
 Tables.rows(o::Tokens) = o
 Tables.schema(o::Tokens) = Tables.Schema(fieldnames(TokenData), fieldtypes(TokenData))
 
-struct TokenData
-    tok::XMLToken
-    depth::Int
-    pos::Int
-    data::typeof(view(Vector{UInt8}("example"), 1:2))
-end
-function Base.show(io::IO, o::TokenData)
-    print(io, o.tok)
-    printstyled(io, " (depth=", o.depth, ", ", "pos=", o.pos, ") : "; color=:light_black)
-    printstyled(io, String(copy(o.data)); color=:light_green)
-end
-
 Base.IteratorSize(::Type{Tokens}) = Base.SizeUnknown()
 Base.eltype(::Type{Tokens}) = TokenData
 Base.isdone(o::Tokens, pos) = pos ≥ length(o.data)
 
-# state = (position_in_data, depth)
-function Base.iterate(o::Tokens, state = (1, 1))
-    i, depth = state
-    Base.isdone(o, i) && return nothing
+function Base.iterate(o::Tokens, state = init(o))
+    n = next(state)
+    isnothing(n) && return nothing
+    return n, n
+end
+
+#-----------------------------------------------------------------------------# TokenData
+struct TokenData
+    tok::XMLToken
+    depth::Int
+    next_depth::Int  # This will be wrong sometimes (ignored by ==)
+    pos::Int
+    len::Int
+    data::Vector{UInt8} # also ignored by ==
+end
+function Base.show(io::IO, o::TokenData)
+    print(io, o.tok)
+    printstyled(io, " (depth=", o.depth, ", ", "pos=", o.pos, ") : "; color=:light_black)
+    printstyled(io, String(o.data[o.pos:o.pos + o.len]); color=:light_green)
+end
+function Base.:(==)(a::TokenData, b::TokenData)
+    a.tok == b.tok && a.depth == b.depth && a.pos == b.pos && a.len == b.len
+end
+String(o::TokenData) = String(o.data[o.pos:o.pos + o.len])
+
+init(o::Tokens) = TokenData(TOK_UNKNOWN, 0, 1, 0, 0, o.data)
+
+function next(o::TokenData)
+    i = o.pos + o.len + 1
+    depth = o.next_depth
     data = o.data
     i = findnext(x -> !isspace(Char(x)), data, i)  # skip insignificant whitespace
+    isnothing(i) && return nothing
     c = Char(o.data[i])
+    j = i + 1
     tok = TOK_UNKNOWN
-    if isletter(c)
+    next_depth = depth
+    if c !== '<'
         tok = TOK_TEXT
         j = findnext(==(UInt8('<')), data, i) - 1
     elseif c === '<'
@@ -98,22 +119,116 @@ function Base.iterate(o::Tokens, state = (1, 1))
             tok = TOK_END_ELEMENT
             j = findnext(==(UInt8('>')), data, i)
             depth -= 1
+            next_depth -= 1
         else
             j = findnext(==(UInt8('>')), data, i)
             if data[j-1] === UInt8('/')
                 tok = TOK_SELF_CLOSED_ELEMENT
             else
-                depth += 1
+                next_depth += 1
                 tok = TOK_START_ELEMENT
             end
         end
-    else
-        error("Unexpected character: $c")
     end
     tok === TOK_UNKNOWN && error("Token isn't identified: $(String(data[i:j]))")
-    return TokenData(tok, depth, i, view(o.data, i:j)) => (j + 1, depth)
+    return TokenData(tok, depth, next_depth, i, j - i, data)
 end
 
+
+function prev(o::TokenData)
+    j = o.pos - 1
+    j < 1 && return nothing
+    (; depth, data) = o
+    next_depth = depth
+    j = findprev(x -> !isspace(Char(x)), data, j)  # skip insignificant whitespace
+    isnothing(j) && return nothing
+    c = Char(o.data[j])
+    i = j - 1
+    tok = TOK_UNKNOWN
+    if c !== '>' # text
+        tok = TOK_TEXT
+        i = findprev(==(UInt8('>')), data, j) + 1
+    elseif c === '>'
+        c2 = Char(o.data[j - 1])
+        if c2 === '-'
+            tok = TOK_COMMENT
+            i = findprev(Vector{UInt8}("<--"), data, j)[1]
+        elseif c2 === ']'
+            tok = TOK_CDATA
+            i = findprev(Vector{UInt8}("<![CDATA["), data, j)[1]
+        elseif c2 === '?'
+            tok = TOK_DECLARATION
+            i = findprev(Vector{UInt8}("<?xml"), data, j)[1]
+        else
+            i = findprev(==(UInt8('<')), data, j)
+            char = Char(data[i+1])
+            if char === '/'
+                tok = TOK_END_ELEMENT
+            elseif char === '!'
+                tok = TOK_DTD
+            elseif isletter(char) || char === '_'
+                tok = TOK_START_ELEMENT
+            else
+                error("Should be unreachable.  Unexpected token: <$char ... $c3$c2$c1>.")
+            end
+        end
+    else
+        error("Unreachable reached in XML.prev")
+    end
+    nexttok = o.tok
+    if nexttok === TOK_END_ELEMENT
+        if tok !== TOK_START_ELEMENT
+            depth += 1
+        end
+    elseif tok === TOK_START_ELEMENT
+        depth -= 1
+    end
+    return TokenData(tok, depth, next_depth, i, j - i, data)
+end
+
+
+#-----------------------------------------------------------------------------# Lazy
+struct LazyNode
+    tokens::Tokens
+    data::TokenData
+end
+LazyNode(t::Tokens) = LazyNode(t, init(t))
+LazyNode(filename::AbstractString) = LazyNode(Tokens(filename))
+
+function Base.get(o::LazyNode)
+    iszero(o.data.pos) ? RowNode(0, DOCUMENT_NODE, nothing, nothing, nothing) : RowNode(o.data)
+end
+
+next(o::LazyNode) = LazyNode(o.tokens, next(o.data))
+prev(o::LazyNode) = LazyNode(o.tokens, prev(o.data))
+
+function Base.show(io::IO, o::LazyNode)
+    print(io, "Lazy: ")
+    show(io, get(o))
+end
+function AbstractTrees.children(o::LazyNode)
+    i = o.i
+    depth = iszero(i) ? 0 : o.tokens[i].depth
+    out = LazyNode[]
+    for j in (i+1):length(o.tokens)
+        tok = o.tokens[j]
+        tok.depth == depth && break
+        tok.depth == depth + 1 && push!(out, LazyNode(o.tokens, j))
+    end
+    return out
+end
+AbstractTrees.nodevalue(o::LazyNode) = get(o)
+function AbstractTrees.parent(o::LazyNode)
+    iszero(i) && return nothing
+    i = findprev(x -> x.depth < o.tokens[o.i].depth, o.tokens, o.i - 1)
+    isnothing(i) ? LazyNode(o.tokens, 0) : LazyNode(o.tokens, i)
+end
+
+function lazy(t::Tokens)
+    tokens = filter!(x -> x.tok !== TOK_END_ELEMENT, collect(t))
+    LazyNode(tokens, 0)
+end
+lazy(filename::AbstractString) = lazy(Tokens(filename))
 
 #-----------------------------------------------------------------------------# Rows
 struct Rows
@@ -130,84 +245,51 @@ struct RowNode
     attributes::Union{OrderedDict{String, String}, Nothing}
     value::Union{String, Nothing}
 end
-function Base.show(io::IO, o::RowNode)
-    printstyled(io, lpad("$(o.depth)", 2o.depth), ':', o.nodetype, ' '; color=:light_green)
-    if o.nodetype === TEXT_NODE
-        printstyled(io, repr(o.value), color=:light_black)
-    elseif o.nodetype === ELEMENT_NODE
-        printstyled(io, '<', o.tag, color=:light_cyan)
-        _print_attrs(io, o)
-        printstyled(io, '>', color=:light_cyan)
-    elseif o.nodetype === DTD_NODE
-        printstyled(io, "<!DOCTYPE", o.tag, color=:light_cyan)
-        printstyled(io, o.value, color=:light_black)
-        printstyled(io, '>', color=:light_cyan)
-    elseif o.nodetype === DECLARATION_NODE
-        printstyled(io, "<?xml", color=:light_cyan)
-        _print_attrs(io, o)
-        printstyled(io, '>', color=:light_cyan)
-    elseif o.nodetype === COMMENT_NODE
-        printstyled(io, "<!--", color=:light_cyan)
-        printstyled(io, o.value, color=:light_black)
-        printstyled(io, "-->", color=:light_cyan)
-    elseif o.nodetype === CDATA_NODE
-        printstyled(io, "<![CDATA[", color=:light_cyan)
-        printstyled(io, o.value, color=:light_black)
-        printstyled(io, "]]>", color=:light_cyan)
-    elseif o.nodetype === DOCUMENT_NODE
-        printstyled(io, "Document", color=:light_cyan)
-    elseif o.nodetype === UNKNOWN_NODE
-        printstyled(io, "Unknown", color=:light_cyan)
+function RowNode(t::TokenData)
+    (; tok, pos, len, depth) = t
+    data = view(t.data, pos:pos+len)
+    @views if tok === TOK_TEXT  # text
+        return RowNode(depth, TEXT_NODE, nothing, nothing, unescape(String(data)))
+    elseif tok === TOK_COMMENT  # <!-- ... -->
+        return RowNode(depth, COMMENT_NODE, nothing, nothing, String(data[4:end-3]))
+    elseif tok === TOK_CDATA  # <![CDATA[...]]>
+        return RowNode(depth, CDATA_NODE, nothing, nothing, String(data[10:end-3]))
+    elseif tok === TOK_DECLARATION  # <?xml attributes... ?>
+        rng = 7:length(data) - 2
+        attributes = get_attributes(data[rng])
+        return RowNode(depth, DECLARATION_NODE, nothing, attributes, nothing)
+    elseif  tok === TOK_DTD  # <!DOCTYPE ...>
+        return RowNode(depth, DTD_NODE, nothing, nothing, String(data[10:end-1]))
+    elseif tok === TOK_START_ELEMENT  # <NAME attributes... >
+        tag, i = get_name(data, 2)
+        i = findnext(x -> isletter(Char(x)) || x === UInt8('_'), data, i)
+        attributes = isnothing(i) ? nothing : get_attributes(data[i:end-1])
+        return RowNode(depth, ELEMENT_NODE, tag, attributes, nothing)
+    elseif tok === TOK_END_ELEMENT  # </NAME>
+        return nothing
+    elseif  tok === TOK_SELF_CLOSED_ELEMENT  # <NAME attributes... />
+        tag, i = get_name(data, 2)
+        i = findnext(x -> isletter(Char(x)) || x === UInt8('_'), data, i)
+        attributes = isnothing(i) ? nothing : get_attributes(data[i:end-2])
+        return RowNode(depth, ELEMENT_NODE, tag, attributes, nothing)
     else
-        error("Unreachable reached")
+        error("Unhandled token: $tok.")
     end
 end
-function _print_attrs(io::IO, o)
-    !isnothing(o.attributes) && printstyled(io, [" $k=\"$v\"" for (k,v) in o.attributes]...; color=:light_black)
-end
+
+AbstractTrees.children(o::RowNode) = missing
+
+Base.show(io::IO, o::RowNode) = _show_node(io, o)
 
 Base.IteratorSize(::Type{Rows}) = Base.SizeUnknown()
 Base.eltype(::Type{Rows}) = RowNode
 Base.isdone(o::Rows, pos) = isdone(o.file, pos)
 
-
-# Same `state` as Tokens
-function Base.iterate(o::Rows, state = (1,1))
-    next = iterate(o.tokens, state)
-    isnothing(next) && return nothing
-    tokendata, state = next
-    (i, depth) = state
-    (; tok, data) = tokendata
-
-    out = @views if tok === TOK_TEXT  # text
-        RowNode(depth, TEXT_NODE, nothing, nothing, unescape(String(data)))
-    elseif tok === TOK_COMMENT  # <!-- ... -->
-        RowNode(depth, COMMENT_NODE, nothing, nothing, String(data[4:end-3]))
-    elseif tok === TOK_CDATA  # <![CDATA[...]]>
-        RowNode(depth, CDATA_NODE, nothing, nothing, String(data[10:end-3]))
-    elseif tok === TOK_DECLARATION  # <?xml attributes... ?>
-        rng = 7:length(data) - 2
-        attributes = get_attributes(data[rng])
-        RowNode(depth, DECLARATION_NODE, nothing, attributes, nothing)
-    elseif  tok === TOK_DTD  # <!DOCTYPE ...>
-        RowNode(depth, DTD_NODE, nothing, nothing, String(data[10:end-1]))
-    elseif tok === TOK_START_ELEMENT  # <NAME attributes... >
-        tag, i = get_name(data, 2)
-        i = findnext(x -> isletter(Char(x)) || x === UInt8('_'), data, i)
-        attributes = isnothing(i) ? nothing : get_attributes(data[i:end-1])
-        RowNode(depth, ELEMENT_NODE, tag, attributes, nothing)
-    elseif tok === TOK_END_ELEMENT  # </NAME>
-        return iterate(o, state)
-    elseif  tok === TOK_SELF_CLOSED_ELEMENT  # <NAME attributes... />
-        tag, i = get_name(data, 2)
-        i = findnext(x -> isletter(Char(x)) || x === UInt8('_'), data, i)
-        attributes = isnothing(i) ? nothing : get_attributes(data[i:end-2])
-        RowNode(depth, ELEMENT_NODE, tag, attributes, nothing)
-    else
-        error("Unhandled token: $tok.")
-    end
-
-    return out => state
+function Base.iterate(o::Rows, state = init(o.tokens))
+    n = next(state)
+    isnothing(n) && return nothing
+    n.tok === TOK_END_ELEMENT && return iterate(o, n)
+    return RowNode(n), n
 end
 
 #-----------------------------------------------------------------------------# get_attributes
@@ -246,41 +328,78 @@ function get_name(data, i)
     return name, j
 end
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 #-----------------------------------------------------------------------------# Node
-@kwdef struct Node
+Base.@kwdef struct Node
     nodetype::NodeType
     tag::Union{Nothing, String} = nothing
     attributes::Union{Nothing, OrderedDict{String, String}} = nothing
-    content::Union{Nothing, String} = nothing
+    value::Union{Nothing, String} = nothing
     children::Union{Nothing, Vector{Node}} = nothing
-    depth::Union{Nothing, Int} = nothing
+    depth::Int = 0
 end
-Node(nodetype::NodeType; kw...) = Node(; nodetype, kw...)
-function Node(o::Node; kw...)
-    Node(; nodetype=o.nodetype, tag=o.tag, attributes=o.attributes, content=o.content, children=o.children, depth=o.depth, kw...)
+function Node((;nodetype, tag, attributes, value, children, depth)::Node; kw...)
+    Node(; nodetype, tag, attributes, value, children, depth, kw...)
+end
+function (o::Node)(children...)
+    isempty(children) && return o
+    out = sizehint!(Node[], length(children))
+    foreach(children) do x
+        if x isa Node
+            push!(out, Node(x; depth=o.depth + 1))
+        else
+            push!(out, Node(nodetype=TEXT_NODE, value=string(x), depth=o.depth + 1))
+        end
+    end
+
+    Node(o; children=out)
+end
+
+function Node((; depth, nodetype, tag, attributes, value)::RowNode)
+    Node(; depth, nodetype, tag, attributes, value)
+end
+Node(o::TokenData) = Node(RowNode(o))
+
+# function element(nodetype::NodeType, tag = nothing; attributes...)
+#     attributes = isempty(attributes) ?
+#         nothing :
+#         OrderedDict(string(k) => string(v) for (k,v) in attributes)
+#     Node(; nodetype, tag, attributes)
+# end
+
+Base.getindex(o::Node, i::Integer) = o.children[i]
+Base.setindex!(o::Node, val, i::Integer) = o.children[i] = Node(val)
+Base.lastindex(o::Node) = lastindex(o.children)
+
+Base.push!(a::Node, b::Node) = push!(a.children, b)
+
+AbstractTrees.children(o::Node) = o.children
+
+Base.show(io::IO, o::Node) = _show_node(io, o)
+
+#-----------------------------------------------------------------------------# read
+read(filename::AbstractString) = Node(Tokens(filename))
+read(io::IO) = Node(Tokens("__UKNOWN_FILE__", read(io)))
+
+Node(filename::String) = Node(Tokens(filename))
+
+function Node(t::Tokens)
+    doc = Node(; nodetype=DOCUMENT_NODE, children=[])
+    stack = [doc]
+    for row in Rows(t)
+        temp = Node(row)
+        node = Node(temp; children = row.nodetype === ELEMENT_NODE ? [] : nothing)
+        filter!(x -> x.depth < node.depth, stack)
+        push!(stack[end], node)
+        push!(stack, node)
+    end
+    return doc
 end
 
 #-----------------------------------------------------------------------------# printing
-function _show_node(io, o)
+function _show_node(io::IO, o)
     printstyled(io, lpad("$(o.depth)", 2o.depth), ':', o.nodetype, ' '; color=:light_green)
     if o.nodetype === TEXT_NODE
-        printstyled(io, repr(o.content), color=:light_black)
+        printstyled(io, repr(o.value), color=:light_black)
     elseif o.nodetype === ELEMENT_NODE
         printstyled(io, '<', o.tag, color=:light_cyan)
         _print_attrs(io, o)
@@ -288,7 +407,7 @@ function _show_node(io, o)
         _print_n_children(io, o)
     elseif o.nodetype === DTD_NODE
         printstyled(io, "<!DOCTYPE", o.tag, color=:light_cyan)
-        printstyled(io, o.content, color=:light_black)
+        printstyled(io, o.value, color=:light_black)
         printstyled(io, '>', color=:light_cyan)
     elseif o.nodetype === DECLARATION_NODE
         printstyled(io, "<?xml", color=:light_cyan)
@@ -296,11 +415,11 @@ function _show_node(io, o)
         printstyled(io, '>', color=:light_cyan)
     elseif o.nodetype === COMMENT_NODE
         printstyled(io, "<!--", color=:light_cyan)
-        printstyled(io, o.content, color=:light_black)
+        printstyled(io, o.value, color=:light_black)
         printstyled(io, "-->", color=:light_cyan)
     elseif o.nodetype === CDATA_NODE
         printstyled(io, "<![CDATA[", color=:light_cyan)
-        printstyled(io, o.content, color=:light_black)
+        printstyled(io, o.value, color=:light_black)
         printstyled(io, "]]>", color=:light_cyan)
     elseif o.nodetype === DOCUMENT_NODE
         printstyled(io, "Document", color=:light_cyan)
@@ -313,393 +432,40 @@ function _show_node(io, o)
     end
 end
 
-Base.getindex(o::Node, i::Integer) = o.children[i]
-Base.setindex!(o::Node, val, i::Integer) = o.children[i] = Node(val)
-Base.lastindex(o::Node) = lastindex(o.children)
-
-Base.push!(a::Node, b::Node) = push!(a.children, b)
-
-Base.read(filename::AbstractString, ::Type{Node}) = open(io -> read(io, Node), filename)
-
-function Base.read(io::IO, ::Type{Node})
-    doc = Node(DOCUMENT_NODE, depth=0, children=[])
-    all_nodes = [doc]
-    for node in StreamingIterator(io)
-        item = node.nodetype === ELEMENT_NODE ? _with_children(node) : node
-        filter!(x -> x.depth < node.depth, all_nodes)
-        push!(all_nodes, item)
-        push!(all_nodes[end-1], item)
-    end
-    return doc
+function _print_attrs(io::IO, o)
+    !isnothing(o.attributes) && printstyled(io, [" $k=\"$v\"" for (k,v) in o.attributes]...; color=:light_black)
+end
+function _print_n_children(io::IO, o)
+    children = AbstractTrees.children(o)
+    printstyled(io, ismissing(children) || isnothing(children) ? "" : " ($(length(children)) children)", color=:light_black)
 end
 
-_with_children(o::Node) = isnothing(o.children) ? Node(o, children=Node[]) : o
+#-----------------------------------------------------------------------------# write_xml
+write(x::Node) = (io = IOBuffer(); write(io, x); String(take!(io)))
+
+function write(io::IO, x::Node; indent = "   ")
+    print(io, indent ^ x.depth)
+    if x.nodetype === TEXT_NODE
+        print(io, x.value)
+    elseif x.nodetype === ELEMENT_NODE
+        print(io, '<', x.tag)
+        _print_attrs(io, x)
+        print(io, isnothing(x.children) ? '/' : "", '>')
+        if !isnothing(x.children)
+            println(io)
+            foreach(AbstractTrees.children(x)) do child
+                write(io, child; indent=indent)
+                println(io)
+            end
+            print(io, indent ^ x.depth)
+            print(io, "</", x.tag, '>')
+        end
+    else
+        error("unknown case")
+    end
+end
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# #-----------------------------------------------------------------------------# File
-# struct File
-#     io::IO
-#     vec::Vector{UInt8}
-# end
-# File(io::IO) = File(io, StringVector(0))
-# File(file::AbstractString) = open(io -> File(io), file, "r")
-
-
-# # Everything but the children in a Node
-# struct Part
-#     nodetype::NodeType
-#     tag::Union{Nothing, Symbol}
-#     attributes::Union{Nothing, OrderedDict{Symbol, String}}
-#     content::Union{Nothing, String}
-#     location::Vector{Int}
-# end
-# function Base.show(io::IO, o::Part)
-#     f = Fields(o)
-#     print(io, "Part(", f.nodetype, "): ")
-#     !isnothing(f.tag) && printstyled(io, '<', f.tag, color=:light_cyan)
-#     !isnothing(f.attributes) && print(io, ' ', join(["$k=\"$v\"" for (k,v) in f.attributes], ' '))
-#     !isnothing(f.tag) && printstyled(io, '>', color=:light_cyan)
-#     !isnothing(f.content) && printstyled(io, repr(f.content), color=:light_black)
-# end
-
-# Base.IteratorSize(::Type{<:File}) = Base.SizeUnknown()
-# Base.eltype(::Type{File}) = Part
-
-
-# function Base.iterate(o::File, state=(idx=0, parent_tags=Symbol[]))
-#     (;io, vec) = o
-#     state.idx === 0 && seekstart(io)
-#     eof(io) && return nothing
-#     next_state = (idx = state.idx + 1, parent_tags = state.parent_tags)
-#     skipchars(isspace, io)
-#     char = read(io, Char)
-
-#     # Case 1: return TEXT_NODE
-#     if char !== '<'
-#         content = read_until(!=('<'), o)
-#         return Part(TEXT_NODE, nothing, nothing, string(char) * content) => next_state
-#     end
-
-#     # Case 2: ELEMENT_NODE
-#     if isletter(peek(io, Char))
-#         tag = read_tag(io, o)
-#         attrs = read_attributes(io, o)
-#         @info "tag: $tag, attrs: $attrs"
-#         s = readuntil(io, '>')
-#         '/' in s && push!(next_state.parent_tags, tag)
-#         return Part(ELEMENT_NODE, tag, attrs, nothing), next_state
-#     end
-
-#     char2 = read(io, Char)
-
-#     # Case 3: closing tag.  Adjust parent_tags and keep reading until we find the next thing.
-#     if char2 === '/'
-#         tag = read_tag(io, o)
-#         if tag === last(parent_tags)
-#             closed_tag = pop!(next_state.parent_tags)
-#             read(io, Char) === '>' || error("Expected '>' after closing tag </$closed_tag.")
-#             skipchars(isspace, io)
-#         else
-#             error("Found unexpected closing tag $tag.  Expected: $(last(parent_tags)).")
-#         end
-#     end
-
-#     # Case 4: DECLARATION_NODE <?xml attributes... ?>
-#     if char2 === '?'
-#         tag = read_tag(io, o)
-#         tag === :xml || error("Expected '<?xml'.  Found '<?$tag'.")
-#         attrs = read_attributes(io, o)
-#         readuntil(io, "?>")
-#         return Part(DECLARATION_NODE, nothing, attrs, nothing), next_state
-#     end
-
-#     # Case 5: Comment / CDATA / DTD
-#     if char2 === '!'
-#         char3 = read(io, Char)
-#         if char3 === '-' # Comment
-#             read(io, Char) === '-' || error("Expected '<!--'.  Found '<!-$char3'.")
-#             content = readuntil(io, "-->", keep=false)
-#             skip(io, 3)
-#             return Part(COMMENT_NODE, nothing, nothing, content), next_state
-#         elseif char3 === '[' # CDATA
-#             read(io, 6) === "CDATA[" || error("Expected '<![CDATA['.  Found '<![$char3'.")
-#             content = readuntil(io, "]]>", keep=false)
-#             skip(io, 3)
-#             return Part(CDATA_NODE, nothing, nothing, content), next_state
-#         elseif char3 === 'D' || char3 === 'd' # DTD
-#             # TODO: all the messy details of DTD
-#             skip(io, 6)
-#             content = readuntil(io, '>', keep=false)
-#             return Part(DTD_NODE, nothing, nothing, content), next_state
-#         else
-#             error("Unknown node beginning with: '<!$char3'.")
-#         end
-#     end
-#     error("Unknown node beginning with: '<$char2'.")
-# end
-
-# function read_until(predicate, io::IO, o::File)
-#     while !predicate(peek(io, Char))
-#         push!(o.vec, read(io, Char))
-#     end
-#     String(o.vec)
-# end
-
-# read_tag(io::IO, o::File) = Symbol(read_until(!isletter, io, o))
-
-# function read_attributes(io::IO, o::File)
-#     skipchars(isspace, io)
-#     peek(io, Char) in "/>" && return nothing
-#     attrs = OrderedDict{Symbol, String}()
-#     while true
-#         skipchars(isspace, io)
-#         char = peek(io, Char)
-#         (isspace(char) || char in "?/>") && break
-#         key = read_tag(io, o)
-#         @info "Key=$key"
-#         skipchars(isspace, io)
-#         read(io, Char) === '=' || error("Expected '=' after attribute name.")
-#         skipchars(isspace, io)
-#         char2 = read(io, Char)
-#         val = readuntil(io, char2; keep=false)
-#         @info "Val=$val"
-#         attrs[Symbol(key)] = val
-#     end
-#     return attrs
-# end
-
-
-
-
-
-# # #-----------------------------------------------------------------------------# LazyNode
-# # struct LazyNode
-# #     nodetype::NodeType
-# #     tag::Union{Nothing, Symbol}
-# #     attributes::Union{Nothing, Dict{Symbol, String}}
-# #     content
-# # end
-
-
-# # #-----------------------------------------------------------------------------# SimpleNode
-# # struct SimpleNode
-# #     nodetype::NodeType
-# #     tag::Union{Nothing, String}
-# #     attributes::Union{Nothing, Dict{String, String}}
-# #     content::Union{Nothing, String}
-# #     index::Int
-# #     parent::Int
-# # end
-# # #-----------------------------------------------------------------------------# SimpleDocument
-# # struct SimpleDocument
-# #     io::IO
-# #     nodes::Vector{SimpleNode}
-# # end
-# # SimpleDocument(file::AbstractString) = SimpleDocument(open(io -> SimpleDocument(io), file, "r"))
-# # function SimpleDocument(io::IO)
-# #     nodes = SimpleNode[]
-# #     while !eof(io)
-# #         add_simplenode!(nodes, io)
-# #     end
-# # end
-
-# # function add_simplenode!(nodes, io)
-# #     (;parent, index) = isempty(nodes) ? (parent=0,index=0) : last(nodes)
-# #     skipchars(isspace, io)
-# #     start = position(io)
-# #     char = peek(io, Char)
-
-# #     nodetype = if char !== '<'
-# #         TEXT_NODE
-# #     elseif char === '?'
-# #         DECLARATION_NODE
-# #     elseif char === '!'
-# #         # DTD or CDATA or COMMENT
-# #     end
-
-
-
-# #     #---------------------------- TEXT_NODE
-# #     if char !== '<'
-# #         content = readuntil(io, '<', keep=false)
-# #         push!(nodes, SimpleNode(TEXT_NODE, nothing, nothing, content, parent, index + 1))
-# #     else
-# #         skip(io, 1) # '<'
-# #         char = peek(io, Char)
-# #         if char === '?'
-# #             #---------------------------- DECLARATION_NODE
-# #             readuntil(io, "?xml", keep=false)
-# #             push!(nodes, SimpleNode(DECLARATION_NODE, nothing, get_attributes(io), nothing, parent, index + 1))
-# #         elseif char === '!'
-# #             char = read(io, Char)
-# #             if char === 'D'
-# #                 #---------------------------- DTD_NODE
-# #                 readuntil(io, "DOCTYPE")
-# #                 push!(nodes, SimpleNode(DTD_NODE, nothing, get_attributes(io), nothing, parent, index + 1))
-# #             elseif char === '['
-# #                 #---------------------------- CDATA_NODE
-# #                 readuntil(io, "[CDATA[", keep=true)
-# #                 content = readuntil(io, "]]>", keep=false)
-# #                 push!(nodes, SimpleNode(CDATA_NODE, nothing, nothing, content, parent, index + 1))
-# #             elseif char === '-'
-# #                 #---------------------------- COMMENT_NODE
-# #                 read(io, Char) == '-' && read(io, Char) == '-' || error("Expected `<!--`")
-# #                 content = readuntil(io, "-->", keep=false)
-# #                 push!(nodes, SimpleNode(COMMENT_NODE, nothing, nothing, content, parent, index + 1))
-# #             else
-# #                 error("Unknown node type: <!$(char)")
-# #             end
-# #         else
-# #             #---------------------------- ELEMENT_NODE
-# #             push!(nodes, SimpleNode(ELEMENT_NODE, get_tag(io), get_attributes(io), nothing, parent, index + 1))
-
-# #         end
-# #     end
-# # end
-
-# # function get_tag(io)
-# #     buf = IOBuffer()
-# #     while true
-# #         char = read(io, Char)
-# #         if isspace(char) || char === '>' || char === '/'
-# #             break
-# #         end
-# #         write(buf, char)
-# #     end
-# #     tag = String(take!(buf))
-# #     # @info tag
-# #     return tag
-# # end
-
-
-
-
-
-
-# # function get_next(o::XMLIterator, i::Int)
-# #     if
-# #     if !isempty(o.siblings_below)
-# #         push!(o.sib)
-# #     else
-# #     end
-# #     io = o.io
-# #     skipchars(isspace, io)
-# #     char = read(io, Char)
-# #     if char === '<'
-# #     else
-# #     end
-# # end
-
-# # #-----------------------------------------------------------------------------# XMLTokenIterator
-# # @enum(TokenType,
-# #     UNKNOWNTOKEN,           # ???
-# #     DTDTOKEN,               # <!DOCTYPE ...>
-# #     DECLARATIONTOKEN,       # <?xml attributes... ?>
-# #     COMMENTTOKEN,           # <!-- ... -->
-# #     CDATATOKEN,             # <![CDATA[...]]>
-# #     ELEMENTTOKEN,           # <NAME attributes... >
-# #     ELEMENTSELFCLOSEDTOKEN, # <NAME attributes... />
-# #     ELEMENTCLOSETOKEN,      # </NAME>
-# #     TEXTTOKEN               # text between a '>' and a '<'
-# # )
-
-# # mutable struct XMLTokenIterator{IOT <: IO}
-# #     io::IOT
-# #     start_pos::Int64  # position(io) always returns Int64?
-# #     buffer::IOBuffer
-# # end
-# # XMLTokenIterator(io::IO) = XMLTokenIterator(io, position(io), IOBuffer())
-
-# # readchar(o::XMLTokenIterator) = (c = read(o.io, Char); write(o.buffer, c); c)
-# # reset(o::XMLTokenIterator) = o.start_pos == 0 ? seekstart(o.io) : seek(o.io, o.start_pos)
-
-# # function readuntil(o::XMLTokenIterator, char::Char)
-# #     c = readchar(o)
-# #     while c != char
-# #         c = readchar(o)
-# #     end
-# # end
-# # function readuntil(o::XMLTokenIterator, pattern::String)
-# #     chars = collect(pattern)
-# #     last_chars = similar(chars)
-# #     while last_chars != chars
-# #         for i in 1:(length(chars) - 1)
-# #             last_chars[i] = last_chars[i+1]
-# #         end
-# #         last_chars[end] = readchar(o)
-# #     end
-# # end
-
-# # function Base.iterate(o::XMLTokenIterator, state=0)
-# #     state == 0 && reset(o)
-# #     pair = next_token(o)
-# #     isnothing(pair) ? nothing : (pair, state + 1)
-# # end
-
-# # function next_token(o::XMLTokenIterator)
-# #     io = o.io
-# #     buffer = o.buffer
-# #     skipchars(isspace, io)
-# #     eof(io) && return nothing
-# #     foreach(_ -> readchar(o), 1:3)
-# #     s = String(take!(buffer))
-# #     skip(io, -3)
-# #     pair = if startswith(s, "<!D") || startswith(s, "<!d")
-# #         readuntil(o, '>')
-# #         DTDTOKEN => String(take!(buffer))
-# #     elseif startswith(s, "<![")
-# #         readuntil(o, "]]>")
-# #         CDATATOKEN => String(take!(buffer))
-# #     elseif startswith(s, "<!-")
-# #         readuntil(o, "-->")
-# #         COMMENTTOKEN => String(take!(buffer))
-# #     elseif startswith(s, "<?x")
-# #         readuntil(o, "?>")
-# #         DECLARATIONTOKEN => String(take!(buffer))
-# #     elseif startswith(s, "</")
-# #         readuntil(o, '>')
-# #         ELEMENTCLOSETOKEN => String(take!(buffer))
-# #     elseif startswith(s, "<")
-# #         readuntil(o, '>')
-# #         s = String(take!(buffer))
-# #         t = endswith(s, "/>") ? ELEMENTSELFCLOSEDTOKEN : ELEMENTTOKEN
-# #         t => s
-# #     else
-# #         readuntil(o, '<')
-# #         skip(io, -1)
-# #         TEXTTOKEN => unescape(String(take!(buffer)[1:end-1]))
-# #     end
-# #     return pair
-# # end
-
-
-# # Base.eltype(::Type{<:XMLTokenIterator}) = Pair{TokenType, String}
-
-# # Base.IteratorSize(::Type{<:XMLTokenIterator}) = Base.SizeUnknown()
-
-# # Base.isdone(itr::XMLTokenIterator, state...) = eof(itr.io)
 
 # # #-----------------------------------------------------------------------------# AbstractXMLNode
 # # abstract type AbstractXMLNode end
