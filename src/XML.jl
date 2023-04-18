@@ -124,7 +124,41 @@ struct RowNode
     attributes::Union{OrderedDict{String, String}, Nothing}
     value::Union{String, Nothing}
 end
-Base.show(io::IO, o::RowNode) = _show_node(io, o)
+function Base.show(io::IO, o::RowNode)
+    printstyled(io, lpad("$(o.depth)", 2o.depth), ':', o.nodetype, ' '; color=:light_green)
+    if o.nodetype === TEXT_NODE
+        printstyled(io, repr(o.value), color=:light_black)
+    elseif o.nodetype === ELEMENT_NODE
+        printstyled(io, '<', o.tag, color=:light_cyan)
+        _print_attrs(io, o)
+        printstyled(io, '>', color=:light_cyan)
+    elseif o.nodetype === DTD_NODE
+        printstyled(io, "<!DOCTYPE", o.tag, color=:light_cyan)
+        printstyled(io, o.value, color=:light_black)
+        printstyled(io, '>', color=:light_cyan)
+    elseif o.nodetype === DECLARATION_NODE
+        printstyled(io, "<?xml", color=:light_cyan)
+        _print_attrs(io, o)
+        printstyled(io, '>', color=:light_cyan)
+    elseif o.nodetype === COMMENT_NODE
+        printstyled(io, "<!--", color=:light_cyan)
+        printstyled(io, o.value, color=:light_black)
+        printstyled(io, "-->", color=:light_cyan)
+    elseif o.nodetype === CDATA_NODE
+        printstyled(io, "<![CDATA[", color=:light_cyan)
+        printstyled(io, o.value, color=:light_black)
+        printstyled(io, "]]>", color=:light_cyan)
+    elseif o.nodetype === DOCUMENT_NODE
+        printstyled(io, "Document", color=:light_cyan)
+    elseif o.nodetype === UNKNOWN_NODE
+        printstyled(io, "Unknown", color=:light_cyan)
+    else
+        error("Unreachable reached")
+    end
+end
+function _print_attrs(io::IO, o)
+    !isnothing(o.attributes) && printstyled(io, [" $k=\"$v\"" for (k,v) in o.attributes]...; color=:light_black)
+end
 
 
 Base.IteratorSize(::Type{Rows}) = Base.SizeUnknown()
@@ -171,27 +205,13 @@ function Base.iterate(o::Rows, state = (1,1))
     return out => state
 end
 
-
-function get_name(data, i)
-    i = findnext(x -> isletter(Char(x)) || x === UInt8('_'), data, i)
-    j = findnext(data, i) do x
-        c = Char(x)
-        !(isletter(c) || isdigit(c) || c ∈ "._-:")
-    end
-    name = String(data[i:j-1])
-    return name, j
-end
-
 #-----------------------------------------------------------------------------# get_attributes
 function get_attributes(data)
     out = OrderedDict{String, String}()
     i = 1
-    while true
+    while !isnothing(i)
         # get key
-        i  = _name_start(data, i)
-        isnothing(i) && break
-        j = _name_stop(data, i)
-        key = String(data[i:j])
+        key, i = get_name(data, i)
         # get quotechar the value is wrapped in (either ' or ")
         i = findnext(x -> Char(x) === '"' || Char(x) === ''', data, i)
         quotechar = data[i]
@@ -199,15 +219,19 @@ function get_attributes(data)
         # get value and set it
         value = String(data[i+1:j-1])
         out[key] = value
-        i = j + 1
+        i = _name_start(data, j + 1)
     end
     return out
 end
 
 #-----------------------------------------------------------------------------# get_name
-_name_start(data, i) = findnext(x -> Char(x) === '"' || Char(x) === ''', data, i)
+# find the start/stop of a name given a starting position `i`
+_name_start(data, i) = findnext(x -> isletter(Char(x)) || Char(x) === '_', data, i)
 is_name_char(x) = (c = Char(x); isletter(c) || isdigit(c) || c ∈ "._-:")
-_name_stop(data, i) = (j = findnext(!is_name_char, data, i); isnothing(j) ? nothing : i - 1)
+function _name_stop(data, i)
+    i = findnext(!is_name_char, data, i)
+    isnothing(i) ? nothing : i
+end
 
 # start at position i, return name and position after name
 function get_name(data, i)
@@ -247,6 +271,7 @@ function Node(o::Node; kw...)
     Node(; nodetype=o.nodetype, tag=o.tag, attributes=o.attributes, content=o.content, children=o.children, depth=o.depth, kw...)
 end
 
+#-----------------------------------------------------------------------------# printing
 function _show_node(io, o)
     printstyled(io, lpad("$(o.depth)", 2o.depth), ':', o.nodetype, ' '; color=:light_green)
     if o.nodetype === TEXT_NODE
@@ -286,7 +311,7 @@ function _print_attrs(io::IO, o)
     !isnothing(o.attributes) && printstyled(io, [" $k=\"$v\"" for (k,v) in o.attributes]...; color=:light_black)
 end
 function _print_n_children(io::IO, o)
-    !isnothing(o.children) && printstyled(io, " (", length(o.children), " children)", color=:light_black)
+    hasfield(typeof(o), :children) && !isnothing(o.children) && printstyled(io, " (", length(o.children), " children)", color=:light_black)
 end
 
 Base.getindex(o::Node, i::Integer) = o.children[i]
