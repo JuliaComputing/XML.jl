@@ -3,9 +3,9 @@ module XML
 using OrderedCollections: OrderedDict
 using Mmap
 using Tables
-using AbstractTrees: AbstractTrees
+using AbstractTrees: AbstractTrees, children
 
-export Node, NodeType
+export Node, NodeType, children
 
 #-----------------------------------------------------------------------------# escape/unescape
 escape_chars = ['&' => "&amp;", '"' => "&quot;", ''' => "&#39;", '<' => "&lt;", '>' => "&gt;"]
@@ -189,46 +189,51 @@ end
 
 #-----------------------------------------------------------------------------# Lazy
 struct LazyNode
-    tokens::Tokens
     data::TokenData
 end
-LazyNode(t::Tokens) = LazyNode(t, init(t))
+LazyNode(t::Tokens) = LazyNode(init(t))
 LazyNode(filename::AbstractString) = LazyNode(Tokens(filename))
 
-function Base.get(o::LazyNode)
-    iszero(o.data.pos) ? RowNode(0, DOCUMENT_NODE, nothing, nothing, nothing) : RowNode(o.data)
+Base.get(o::LazyNode) = RowNode(o.data)
+
+function next(o::LazyNode)
+    x = next(o.data)
+    isnothing(x) ? nothing : LazyNode(x)
+end
+function prev(o::LazyNode)
+    x = prev(o.data)
+    isnothing(x) ? nothing : LazyNode(x)
 end
 
-next(o::LazyNode) = LazyNode(o.tokens, next(o.data))
-prev(o::LazyNode) = LazyNode(o.tokens, prev(o.data))
-
 function Base.show(io::IO, o::LazyNode)
-    print(io, "Lazy: ")
+    print(io, "LazyNode: ")
     show(io, get(o))
 end
 function AbstractTrees.children(o::LazyNode)
-    i = o.i
-    depth = iszero(i) ? 0 : o.tokens[i].depth
+    depth = o.data.depth
     out = LazyNode[]
-    for j in (i+1):length(o.tokens)
-        tok = o.tokens[j]
-        tok.depth == depth && break
-        tok.depth == depth + 1 && push!(out, LazyNode(o.tokens, j))
+    x = o
+    while !isnothing(x)
+        x = next(x)
+        isnothing(x) && break
+        x.data.tok === TOK_END_ELEMENT && continue
+        x.data.depth == depth && break
+        x.data.depth == depth + 1 && push!(out, x)
     end
     return out
 end
 AbstractTrees.nodevalue(o::LazyNode) = get(o)
+
 function AbstractTrees.parent(o::LazyNode)
-    iszero(i) && return nothing
-    i = findprev(x -> x.depth < o.tokens[o.i].depth, o.tokens, o.i - 1)
-    isnothing(i) ? LazyNode(o.tokens, 0) : LazyNode(o.tokens, i)
+    depth = o.data.depth
+    x = prev(o)
+    while !isnothing(x)
+        x.data.depth == depth - 1 && return x
+        x = prev(x)
+    end
+    return nothing
 end
 
-function lazy(t::Tokens)
-    tokens = filter!(x -> x.tok !== TOK_END_ELEMENT, collect(t))
-    LazyNode(tokens, 0)
-end
-lazy(filename::AbstractString) = lazy(Tokens(filename))
 
 #-----------------------------------------------------------------------------# Rows
 struct Rows
@@ -247,6 +252,7 @@ struct RowNode
 end
 function RowNode(t::TokenData)
     (; tok, pos, len, depth) = t
+    pos === 0 && return RowNode(0, DOCUMENT_NODE, nothing, nothing, nothing)
     data = view(t.data, pos:pos+len)
     @views if tok === TOK_TEXT  # text
         return RowNode(depth, TEXT_NODE, nothing, nothing, unescape(String(data)))
