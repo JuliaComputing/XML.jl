@@ -1,8 +1,22 @@
 using XML
 using Downloads: download
 using Test
+using AbstractTrees
 
+#-----------------------------------------------------------------------------# roundtrip
+@testset "read/write/read roundtrip" begin
+    for file = ["books.xml", "example.kml"]
+        node = Node(file)
+        temp = "test.xml"
+        XML.write(temp, node)
+        node2 = Node(temp)
+        for (a,b) in zip(AbstractTrees.Leaves(node), AbstractTrees.Leaves(node2))
+            @test a == b
+        end
+    end
+end
 
+#-----------------------------------------------------------------------------# Tokens
 @testset "Tokens" begin
     file = "books.xml"
     t = XML.Tokens(file)
@@ -39,6 +53,8 @@ using Test
         end
     end
 end
+
+
 
 # @testset "XML.jl" begin
 #     @testset "Separate structs" begin
@@ -92,5 +108,5 @@ end
 #     end
 
 #     # cleanup
-#     rm("test.xml", force=true)
+    rm("test.xml", force=true)
 # end

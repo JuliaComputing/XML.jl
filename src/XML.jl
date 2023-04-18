@@ -101,6 +101,7 @@ function next(o::TokenData)
         if c2 === '!'
             c3 = Char(o.data[i + 2])
             if c3 === '-'
+                i += 1
                 tok = TOK_COMMENT
                 j = findnext(Vector{UInt8}("-->"), data, i)[end]
             elseif c3 === '['
@@ -133,7 +134,6 @@ function next(o::TokenData)
     tok === TOK_UNKNOWN && error("Token isn't identified: $(String(data[i:j]))")
     return TokenData(tok, depth, next_depth, i, j - i, data)
 end
-
 
 function prev(o::TokenData)
     j = o.pos - 1
@@ -359,6 +359,18 @@ function Node((; depth, nodetype, tag, attributes, value)::RowNode)
 end
 Node(o::TokenData) = Node(RowNode(o))
 
+function Base.:(==)(a::Node, b::Node)
+    a.nodetype == b.nodetype &&
+    a.tag == b.tag &&
+    a.attributes == b.attributes &&
+    a.value == b.value && (
+        (isnothing(a.children) && isnothing(b.children)) ||
+        (isnothing(a.children) && isempty(b.children)) ||
+        (isempty(a.children) && isnothing(b.children)) ||
+        all(ai == bi for (ai,bi) in zip(a.children, b.children))
+    )
+end
+
 # function element(nodetype::NodeType, tag = nothing; attributes...)
 #     attributes = isempty(attributes) ?
 #         nothing :
@@ -372,7 +384,7 @@ Base.lastindex(o::Node) = lastindex(o.children)
 
 Base.push!(a::Node, b::Node) = push!(a.children, b)
 
-AbstractTrees.children(o::Node) = o.children
+AbstractTrees.children(o::Node) = isnothing(o.children) ? [] : o.children
 
 Base.show(io::IO, o::Node) = _show_node(io, o)
 
@@ -443,255 +455,47 @@ end
 #-----------------------------------------------------------------------------# write_xml
 write(x::Node) = (io = IOBuffer(); write(io, x); String(take!(io)))
 
+write(filename::AbstractString, x::Node) = open(io -> write(io, x), filename, "w")
+
 function write(io::IO, x::Node; indent = "   ")
-    print(io, indent ^ x.depth)
+    padding = indent ^ max(0, x.depth - 1)
+    print(io, padding)
     if x.nodetype === TEXT_NODE
-        print(io, x.value)
+        print(io, escape(x.value))
     elseif x.nodetype === ELEMENT_NODE
         print(io, '<', x.tag)
         _print_attrs(io, x)
         print(io, isnothing(x.children) ? '/' : "", '>')
-        if !isnothing(x.children)
+        single_text_child = !isnothing(x.children) && length(x.children) == 1 && x.children[1].nodetype === TEXT_NODE
+        if single_text_child
+            write(io, only(x.children); indent="")
+            print(io, "</", x.tag, '>')
+        elseif !isnothing(x.children)
             println(io)
             foreach(AbstractTrees.children(x)) do child
-                write(io, child; indent=indent)
+                write(io, child; indent)
                 println(io)
             end
-            print(io, indent ^ x.depth)
-            print(io, "</", x.tag, '>')
+            print(io, padding, "</", x.tag, '>')
+        end
+    elseif x.nodetype === DTD_NODE
+        print(io, "<!DOCTYPE", x.value, '>')
+    elseif x.nodetype === DECLARATION_NODE
+        print(io, "<?xml")
+        _print_attrs(io, x)
+        print(io, "?>")
+    elseif x.nodetype === COMMENT_NODE
+        print(io, "<!--", x.value, "-->")
+    elseif x.nodetype === CDATA_NODE
+        print(io, "<![CDATA[", x.value, "]]>")
+    elseif x.nodetype === DOCUMENT_NODE
+        foreach(AbstractTrees.children(x)) do child
+            write(io, child; indent)
+            println(io)
         end
     else
-        error("unknown case")
+        error("Unreachable case reached during XML.write")
     end
 end
-
-
-
-# # #-----------------------------------------------------------------------------# AbstractXMLNode
-# # abstract type AbstractXMLNode end
-
-# # Base.show(io::IO, ::MIME"text/plain", o::AbstractXMLNode) = showxml(io, o)
-# # Base.show(io::IO, ::MIME"text/xml", o::AbstractXMLNode) = showxml(io, o)
-# # Base.show(io::IO, ::MIME"application/xml", o::AbstractXMLNode) = showxml(io, o)
-
-# # Base.write(io::IO, node::AbstractXMLNode) = foreach(x -> showxml(io, x), children(node))
-
-# # function Base.:(==)(a::T, b::T) where {T <: AbstractXMLNode}
-# #     all(getfield(a, f) == getfield(b, f) for f in fieldnames(T))
-# # end
-
-# # const INDENT = "  "
-
-# # showxml(x; depth=0) = (io=IOBuffer(); showxml(io, x); print(String(take!(io))))
-
-# # # assumes '\n' occurs in String
-# # showxml(io::IO, x::String; depth=0) = print(io, INDENT^depth, x)
-
-# # printnode(io::IO, o::AbstractXMLNode) = showxml(io, o)
-
-
-# # #-----------------------------------------------------------------------------# DTD
-# # # TODO: all the messy details of DTD.  For now, just dump everything into `text`
-# # struct DTD <: AbstractXMLNode
-# #     text::String
-# # end
-# # showxml(io::IO, o::DTD; depth=0) = print(io, INDENT^depth, "<!DOCTYPE ", o.text, '>')
-
-
-# # #-----------------------------------------------------------------------------# Declaration
-# # mutable struct Declaration <: AbstractXMLNode
-# #     tag::String
-# #     attributes::OrderedDict{Symbol, String}
-# # end
-# # function showxml(io::IO, o::Declaration; depth=0)
-# #     print(io, INDENT ^ depth, "<?", o.tag)
-# #     print_attributes(io, o)
-# #     print(io, "?>")
-# # end
-# # attributes(o::Declaration) = o.attributes
-
-# # #-----------------------------------------------------------------------------# CData
-# # mutable struct CData <: AbstractXMLNode
-# #     text::String
-# # end
-# # showxml(io::IO, o::CData; depth=0) = printstyled(io, INDENT ^ depth, "<![CDATA[", o.text, "]]>", color=:light_black)
-
-
-# # #-----------------------------------------------------------------------------# Comment
-# # mutable struct Comment <: AbstractXMLNode
-# #     text::String
-# # end
-# # showxml(io::IO, o::Comment; depth=0) = printstyled(io, INDENT ^ depth, "<!-- ", escape(o.text), " -->", color=:light_black)
-
-# # #-----------------------------------------------------------------------------# Element
-# # mutable struct Element <: AbstractXMLNode
-# #     tag::String
-# #     attributes::OrderedDict{Symbol, String}
-# #     children::Vector{Union{CData, Comment, Element, String}}
-# #     function Element(tag="UNDEF", attributes=OrderedDict{Symbol,String}(), children=Union{CData, Comment, Element, String}[])
-# #         new(tag, attributes, children)
-# #     end
-# # end
-# # function h(tag::String, children...; attrs...)
-# #     attributes = OrderedDict{Symbol,String}(k => string(v) for (k,v) in pairs(attrs))
-# #     Element(tag, attributes, collect(children))
-# # end
-
-# # function showxml(io::IO, o::Element; depth=0)
-# #     print(io, INDENT ^ depth, '<')
-# #     printstyled(io, tag(o), color=:light_cyan)
-# #     print_attributes(io, o)
-# #     n = length(children(o))
-# #     if n == 0
-# #         print(io, "/>")
-# #     elseif n == 1 && children(o)[1] isa String
-# #         s = children(o)[1]
-# #         print(io, '>', s, "</")
-# #         printstyled(io, tag(o), color=:light_cyan)
-# #         print(io, '>')
-# #     else
-# #         print(io, '>')
-# #         for child in children(o)
-# #             println(io)
-# #             showxml(io, child; depth=depth + 1)
-# #         end
-# #         print(io, '\n', INDENT^depth, "</")
-# #         printstyled(io, tag(o), color=:light_cyan)
-# #         print(io, '>')
-# #     end
-# # end
-
-# # Base.show(io::IO, o::Element) = print_tree(io, o)
-
-# # function printnode(io::IO, o::Element, color=:light_cyan)
-# #     print(io, '<')
-# #     printstyled(io, tag(o), color=color)
-# #     print_attributes(io, o)
-# #     n = length(children(o))
-# #     if n == 0
-# #         print(io, "/>")
-# #     else
-# #         print(io, '>')
-# #         printstyled(io, " (", length(children(o)), n > 1 ? " children)" : " child)", color=:light_black)
-# #     end
-# # end
-
-# # function print_attributes(io::IO, o::AbstractXMLNode)
-# #     foreach(pairs(attributes(o))) do (k,v)
-# #         printstyled(io, ' ', k, '='; color=:green)
-# #         printstyled(io, '"', v, '"'; color=:light_green)
-# #     end
-# # end
-
-# # children(o::Element) = getfield(o, :children)
-# # tag(o::Element) = getfield(o, :tag)
-# # attributes(o::Element) = getfield(o, :attributes)
-
-# # Base.getindex(o::Element, i::Integer) = children(o)[i]
-# # Base.lastindex(o::Element) = lastindex(children(o))
-# # Base.setindex!(o::Element, val::Element, i::Integer) = setindex!(children(o), val, i)
-# # Base.push!(o::Element, val::Element) = push!(children(o), val)
-
-# # Base.getproperty(o::Element, x::Symbol) = attributes(o)[x]
-# # Base.setproperty!(o::Element, x::Symbol, val) = (attributes(o)[x] = string(val))
-# # Base.propertynames(o::Element) = collect(keys(attributes(o)))
-
-# # Base.get(o::Element, key::Symbol, val) = hasproperty(o, key) ? getproperty(o, key) : val
-# # Base.get!(o::Element, key::Symbol, val) = hasproperty(o, key) ? getproperty(o, key) : setproperty!(o, key, val)
-
-
-
-
-# # #-----------------------------------------------------------------------------# Document
-# # mutable struct Document <: AbstractXMLNode
-# #     prolog::Vector{Union{Comment, Declaration, DTD}}
-# #     root::Element
-# #     Document(prolog=Union{Comment,Declaration,DTD}[], root=Element()) = new(prolog, root)
-# # end
-
-# # function Document(o::XMLTokenIterator)
-# #     doc = Document()
-# #     populate!(doc, o)
-# #     return doc
-# # end
-
-# # Document(file::String) = open(io -> Document(XMLTokenIterator(io)), file, "r")
-# # Document(io::IO) = Document(XMLTokenIterator(io))
-
-# # Base.show(io::IO, ::MIME"text/plain", o::Document) = print_tree(io, o; maxdepth=1)
-
-# # printnode(io::IO, o::Document) = print(io, "XML.Document")
-
-# # children(o::Document) = (o.prolog..., o.root)
-
-# # showxml(io::IO, o::Document; depth=0) = foreach(x -> (showxml(io, x), println(io)), children(o))
-
-# # #-----------------------------------------------------------------------------# makers (AbstractXMLNode from a token)
-# # make_dtd(s) = DTD(replace(s, "<!doctype " => "", "<!DOCTYPE " => "", '>' => ""))
-# # make_declaration(s) = Declaration(get_tag(s), get_attributes(s))
-# # make_comment(s) = Comment(replace(s, "<!-- " => "", " -->" => ""))
-# # make_cdata(s) = CData(replace(s, "<![CDATA[" => "", "]]>" => ""))
-# # make_element(s) = Element(get_tag(s), get_attributes(s))
-
-# # get_tag(x) = @inbounds x[findfirst(r"[a-zA-z][^\s>/]*", x)]  # Matches: (any letter) → (' ', '/', '>')
-# # # get_tag(x) = match(r"[a-zA-z][^\s>/]*", x).match  # Matches: (any letter) → (' ', '/', '>')
-
-# # function get_attributes(x)
-# #     out = OrderedDict{Symbol,String}()
-# #     rng = findfirst(r"(?<=\s).*\"", x)
-# #     isnothing(rng) && return out
-# #     s = x[rng]
-# #     kys = (m.match for m in eachmatch(r"[a-zA-Z][a-zA-Z\.-_]*(?=\=)", s))
-# #     vals = (m.match for m in eachmatch(r"(?<=(\=\"))[^\"]*", s))
-# #     foreach(zip(kys,vals)) do (k,v)
-# #         out[Symbol(k)] = v
-# #     end
-# #     out
-# # end
-
-
-
-# # #-----------------------------------------------------------------------------# populate!
-# # function populate!(doc::Document, o::XMLTokenIterator)
-# #     for (T, s) in o
-# #         if T == DTDTOKEN
-# #             push!(doc.prolog, make_dtd(s))
-# #         elseif T == DECLARATIONTOKEN
-# #             push!(doc.prolog, make_declaration(s))
-# #         elseif T == COMMENTTOKEN
-# #             push!(doc.prolog, make_comment(s))
-# #         else  # root node
-# #             doc.root = Element(get_tag(s), get_attributes(s))
-# #             add_children!(doc.root, o, "</$(tag(doc.root))>")
-# #         end
-# #     end
-# # end
-
-# # # until = closing tag e.g. `</Name>`
-# # function add_children!(e::Element, o::XMLTokenIterator, until::String)
-# #     s = ""
-# #     c = children(e)
-# #     while s != until
-# #         next = iterate(o, -1)  # if state == 0, io will get reset to original position
-# #         isnothing(next) && break
-# #         T, s = next[1]
-# #         if T == COMMENTTOKEN
-# #             push!(c, make_comment(s))
-# #         elseif T == CDATATOKEN
-# #             push!(c, make_cdata(s))
-# #         elseif T == ELEMENTSELFCLOSEDTOKEN
-# #             push!(c, make_element(s))
-# #         elseif T == ELEMENTTOKEN
-# #             child = make_element(s)
-# #             add_children!(child, o, "</$(tag(child))>")
-# #             push!(c, child)
-# #         elseif T == TEXTTOKEN
-# #             push!(c, s)
-# #         end
-# #     end
-# # end
-
-# # #-----------------------------------------------------------------------------# Node
-# # include("node.jl")
 
 end
