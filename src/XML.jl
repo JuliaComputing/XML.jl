@@ -3,6 +3,7 @@ module XML
 using OrderedCollections: OrderedDict
 using Base: @kwdef, StringVector
 using Mmap
+using Tables
 # import AbstractTrees: print_tree, printnode, children
 
 export Document, DTD, Declaration, Comment, CData, Element,
@@ -42,17 +43,20 @@ unescape(x::AbstractString) = replace(x, reverse.(escape_chars)...)
 struct Tokens
     filename::String
     data::Vector{UInt8}
-    name_map::Dict{String, Symbol}
-    Tokens(filename::String) = new(filename, Mmap.mmap(filename), Dict{String, Symbol}())
+    Tokens(filename::String) = new(filename, Mmap.mmap(filename))
 end
+Tables.rows(o::Tokens) = o
+Tables.schema(o::Tokens) = Tables.Schema(fieldnames(TokenData), fieldtypes(TokenData))
 
 struct TokenData
     tok::XMLToken
     depth::Int
+    pos::Int
     data::typeof(view(Vector{UInt8}("example"), 1:2))
 end
 function Base.show(io::IO, o::TokenData)
-    print(io, o.tok, '(', o.depth, "): ")
+    print(io, o.tok)
+    printstyled(io, " (depth=", o.depth, ", ", "pos=", o.pos, ") : "; color=:light_black)
     printstyled(io, String(copy(o.data)); color=:light_green)
 end
 
@@ -107,7 +111,7 @@ function Base.iterate(o::Tokens, state = (1, 1))
         error("Unexpected character: $c")
     end
     tok === TOK_UNKNOWN && error("Token isn't identified: $(String(data[i:j]))")
-    return TokenData(tok, depth, view(o.data, i:j)) => (j + 1, depth)
+    return TokenData(tok, depth, i, view(o.data, i:j)) => (j + 1, depth)
 end
 
 
@@ -116,6 +120,8 @@ struct Rows
     tokens::Tokens
 end
 Rows(filename::String) = Rows(Tokens(filename))
+Tables.rows(o::Rows) = o
+Tables.schema(o::Rows) = Tables.Schema(fieldnames(RowNode), fieldtypes(RowNode))
 
 struct RowNode
     depth::Int
@@ -159,7 +165,6 @@ end
 function _print_attrs(io::IO, o)
     !isnothing(o.attributes) && printstyled(io, [" $k=\"$v\"" for (k,v) in o.attributes]...; color=:light_black)
 end
-
 
 Base.IteratorSize(::Type{Rows}) = Base.SizeUnknown()
 Base.eltype(::Type{Rows}) = RowNode
@@ -307,121 +312,12 @@ function _show_node(io, o)
         error("Unreachable reached")
     end
 end
-function _print_attrs(io::IO, o)
-    !isnothing(o.attributes) && printstyled(io, [" $k=\"$v\"" for (k,v) in o.attributes]...; color=:light_black)
-end
-function _print_n_children(io::IO, o)
-    hasfield(typeof(o), :children) && !isnothing(o.children) && printstyled(io, " (", length(o.children), " children)", color=:light_black)
-end
 
 Base.getindex(o::Node, i::Integer) = o.children[i]
 Base.setindex!(o::Node, val, i::Integer) = o.children[i] = Node(val)
 Base.lastindex(o::Node) = lastindex(o.children)
 
 Base.push!(a::Node, b::Node) = push!(a.children, b)
-
-#-----------------------------------------------------------------------------# FileChunk
-# struct FileChunk
-#     file::File
-#     rng::UnitRange{Int}
-#     nodetype::NodeType
-# end
-# data(o::FileChunk) = (data = view(o.file.data, o.rng), nodetype = o.nodetype)
-
-# Base.IteratorSize(::Type{FileChunk}) = Base.SizeUnknown()
-# Base.eltype(::Type{FileChunk}) = typeof(())
-
-
-
-# Base.IteratorSize(::Type{File}) = Base.SizeUnknown()
-# Base.eltype(::Type{File}) = Node
-
-# # state = (position, depth)
-# function Base.iterate(o::File, state=(1, 0))
-#     pos, depth = state
-#     pos = findnext(x -> !isspace(Char(x)), o.data, pos)
-#     isnothing(pos) && return nothing
-
-#     char = Char(o.data[pos])
-#     isletter(char) && return get_text(o, pos, depth)
-
-#     char != '<' && error("Unexpected character: $char")
-#     pos += 1
-#     char = Char(o.data[pos])
-#     if char === '/'
-#         depth -= 1
-#         pos = findnext(x -> x == UInt8('>'), o.data, pos)
-#         return iterate(o, (pos + 1, depth))
-#     end
-#     isletter(char) && return get_element(o, pos, depth)
-#     char === '?' && return get_declaration(o, pos + 3, depth)
-#     char != '!' && error("Unexpected character: $char")
-
-#     pos += 1
-#     char = Char(o.data[pos])
-#     char === '-' && return get_comment(o, pos + 1, depth)
-#     char === '[' && return get_cdata(o, pos + length("CDATA["), depth)
-#     char === 'D' && return get_dtd(o, pos + length("OCTYPE"), depth)
-# end
-
-# function get_text(o::File, pos, depth)
-#     pos2 = findnext(x -> x == UInt8('<'), o.data, pos) - 1
-#     return Node(TEXT_NODE; depth, content=unescape(String(o.data[pos:pos2]))) => (pos2 + 1, depth)
-# end
-# function get_element(o::File, pos, depth)
-#     tag, pos = get_name(o, pos)
-#     attributes, pos = get_attributes(o, pos)
-#     pos = findnext(==(UInt8('>')), o.data, pos)
-#     o.data[pos-1] !== UInt8('/') && (depth += 1)
-#     return Node(ELEMENT_NODE; depth, tag, attributes) => (pos + 1, depth)
-# end
-# function get_declaration(o::File, pos, depth)
-#     attributes, pos = get_attributes(o, pos)
-#     return Node(DECLARATION_NODE; depth, attributes) => (pos, depth)
-# end
-# function get_comment(o::File, pos, depth)
-#     a, b = extrema(findnext(Vector{UInt8}("-->"), o.data, pos))
-#     content = o.data[pos:a-1]
-#     return Node(COMMENT_NODE; depth, content) => (b + 1, depth)
-# end
-# function get_cdata(o::File, pos, depth)
-#     a, b = extrema(findnext(Vector{UInt8}("]]>"), o.data, pos))
-#     content =  String(o.data[pos:a-1])
-#     return Node(CDATA_NODE; depth, content) => (b + 1, depth)
-# end
-# function get_dtd(o::File, pos, depth)
-#     pos2 = findnext(==(UInt8('>')), o.data, pos)
-#     content = String(o.data[pos:pos2-1])
-#     return Node(DTD_NODE; depth, content) => (pos2 + 1, depth)
-# end
-
-# function get_name(o::File, pos)
-#     pos2 = findnext(x -> !(isletter(Char(x)) || isdigit(Char(x)) || x ∉ Vector{UInt8}("._-:")), o.data, pos)
-#     name = String(o.data[pos:pos2-1])
-#     return name, pos2
-# end
-
-# function get_attributes(o::File, pos)
-#     out = OrderedDict{Symbol, String}()
-#     pos2 = pos
-#     while true
-#         if isspace(Char(o.data[pos2]))
-#             pos += 1
-#             continue
-#         end
-#         o.data[pos] == UInt8('>') && break
-#         key, pos = get_name(o, pos)
-#         @info key, pos
-#         pos = findnext(x -> Char(x) === '"' || Char(x) === ''', o.data, pos) + 1
-#         quotechar = o.data[pos]
-#         pos2 = findnext(==(quotechar), o.data, pos)
-#         value = String(o.data[pos:pos2-1])
-#         out[Symbol(key)] = value
-#         pos = pos2 + 1
-#     end
-#     return out, pos2 + 1
-# end
-
 
 Base.read(filename::AbstractString, ::Type{Node}) = open(io -> read(io, Node), filename)
 
@@ -438,162 +334,6 @@ function Base.read(io::IO, ::Type{Node})
 end
 
 _with_children(o::Node) = isnothing(o.children) ? Node(o, children=Node[]) : o
-
-#-----------------------------------------------------------------------------# StreamingIterator
-@kwdef struct StreamingIterator
-    io::IO
-    buf::IOBuffer = IOBuffer()
-    debug::Bool = false
-end
-function StreamingIterator(io::IO; kw...)
-    isreadable(io) || error("IO input to StreamingIterator is not readable.")
-    StreamingIterator(; io, kw...)
-end
-
-Base.eltype(::Type{<:StreamingIterator}) = Node
-Base.IteratorSize(::Type{<:StreamingIterator}) = Base.SizeUnknown()
-Base.isdone(itr::StreamingIterator, state...) = eof(itr.io)
-
-function Base.read(o::StreamingIterator, x...)
-    item = read(o.io, x...)
-    write(o.buf, item)
-    return item
-end
-Base.readuntil(o::StreamingIterator, x; keep=false) = readuntil(o.io, x; keep)
-Base.peek(o::StreamingIterator, x) = peek(o.io, x)
-skip_spaces(o::StreamingIterator) = skipchars(isspace, o.io)
-Base.skip(o::StreamingIterator, n::Integer) = skip(o.io, n)
-# Base.readeach(o::StreamingIterator, T) = readeach(o.io, T)
-Base.take!(o::StreamingIterator) = take!(o.buf)
-
-# state = (index,depth)
-function Base.iterate(o::StreamingIterator, state = (0, 1))
-    state[1] == 0 && seekstart(o.io)
-    next, state2 = get_next(o, state)
-    return isnothing(next) ? nothing : (next, state2)
-end
-
-function get_next(o::StreamingIterator, state)
-    skip_spaces(o)
-    Base.isdone(o) && return (nothing, nothing)
-    take!(o)  # ensure buffer starts from scratch
-    index, depth = state
-    #---------------------------------# CASE 1: TEXT_NODE
-    char = peek(o, Char)
-    if char !== '<'
-        char = read(o, Char)
-        while true
-            peek(o, Char) === '<' ? break : read(o, Char)
-        end
-        content = String(take!(o))
-        return Node(TEXT_NODE; content, depth) => (index + 1, depth)
-    elseif char === '<'
-        skip(o, 1)
-    else
-        error("Expected a letter (text node) or '<'.  Found: '$char'.")
-    end
-    #---------------------------------# CASE 2: Closing tag of ELEMENT_NODE: </NAME>
-    char = peek(o, Char)
-    if char === '/'
-        closing_tag = readuntil(o, '>')
-        return get_next(o, (index, depth - 1))
-    end
-    #---------------------------------# CASE 3: Opening tag of ELEMENT_NODE: <NAME attributes... >
-    if isletter(char) || char === '_'  # Names can begin with a letter or underscore
-        tag = read_name(o)
-        attributes = read_attributes(o)
-        c = read(o, Char)
-        if c === '/'
-            read(o, Char) === '>' || error("Expected '>' after '/' at end of tag.")
-        elseif c !== '>'
-            error("Expected '>' at end of tag.  Found: '$c'.")
-        end
-        nextdepth = depth + (c === '>')
-        return Node(ELEMENT_NODE; tag, attributes, depth) => (index + 1, nextdepth)
-    end
-    #---------------------------------# CASE 4: DECLARATION_NODE: <?xml ... ?>
-    if char === '?'
-        skip(o, 1)
-        tag = read_name(o)
-        tag == "xml" || error("Expected 'xml' tag.  Found: '$tag'.")
-        attributes = read_attributes(o)
-        skip_spaces(o)
-        read(o, Char) === '?' || error("Expected '?>' at end of declaration.")
-        read(o, Char) === '>' || error("Expected '?>' at end of declaration.")
-        return Node(DECLARATION_NODE; attributes, depth) => (index + 1, depth)
-    end
-
-    #---------------------------------# CASE 5: Error handling for invalid characters
-    char = read(o, Char)  # same as peek above
-    char !== '!' && error("Expected character after '<' to be a letter, '?', or '!'.  Found: '$char'.")
-
-    # Everything after here begins with: <!
-
-    #---------------------------------# CASE 6: DTD_NODE: <!DOCTYPE ...>
-    if peek(o, Char) in "dD"
-        tag = read_name(o)
-        tag == "doctype" || tag == "DOCTYPE" || error("Expected 'DOCTYPE' tag.  Found: '$tag'.")
-        content = readuntil(o, '>'; keep=false)
-        return Node(COMMENT_NODE; content, depth) => (index + 1, depth)
-    end
-
-    #---------------------------------# CASE 7: COMMENT_NODE: <!-- ... -->
-    char = read(o, Char)  # <!
-    if char === '-'
-        read(o, Char) === '-' || error("Expected '<!--'.  Found: '<!-$char'.")
-        take!(o)
-        content = readuntil(o, "-->"; keep=false)
-        return Node(COMMENT_NODE; content, depth) => (index + 1, depth)
-    end
-
-    #---------------------------------# CASE 8: CDATA_NODE: <![CDATA[ ... ]]>
-    if char === '['
-        take!(o)
-        tag = read_name(o)
-        tag === "CDATA" || error("Expected 'CDATA' tag.  Found: '$tag'.")
-        read(o, Char) === '[' || error("Expected '[' after 'CDATA'.")
-        take!(o)
-        content = readuntil(o, "]]>"; keep=false)
-        return Node(CDATA_NODE; content, depth) => (index + 1, depth)
-    end
-
-    error("Unknown error. String buffer contains: $(String(take!(o)))")
-end
-
-function read_name(o::StreamingIterator)
-    char = peek(o, Char)
-    isletter(char) || char === '_' || error("Expected a letter or underscore. Found '$char'.")
-    read(o, Char)
-    while true
-        char = peek(o, Char)
-        (isletter(char) || isdigit(char) || char in "_-.:") ? read(o, Char) : break
-    end
-    return String(take!(o))
-end
-
-function read_attributes(o::StreamingIterator)
-    skip_spaces(o)
-    peek(o, Char) in "?/>" && return nothing
-    out = OrderedDict{String,String}()
-    while true
-        peek(o, Char) in "?/>" && break
-        key = read_name(o)
-        skip_spaces(o)
-        read(o, Char) === '=' || error("Expected '=' after attribute name.")
-        skip_spaces(o)
-        quotechar = read(o, Char)
-        val = readuntil(o, quotechar; keep=false)
-        out[key] = val
-        skip_spaces(o)
-        take!(o)
-    end
-    return out
-end
-
-
-
-
-
 
 
 
