@@ -7,6 +7,6 @@ file = download("http://schemas.opengis.net/kml/2.2.0/ogckml22.xsd")
 filename = tempname()
 
 #-----------------------------------------------------------------------------# read
-@info "XML Document read" @benchmark XML.read($file, XML.Node)
-@info "XML Document read" @benchmark open(io -> collect(XML.FileIterator(io)), $file, "r")
+@info "XML read" @benchmark Node($file)
+@info "XML lazy" @benchmark XML.LazyNode($file)
 @info "EzXML read" @benchmark EzXML.readxml($file)
