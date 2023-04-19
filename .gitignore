@@ -2,3 +2,4 @@
 *generated_xsd.jl
 *.xml
 *.gz
+*.DS_Store
