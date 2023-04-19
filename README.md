@@ -78,7 +78,7 @@ cdata("hello > < ' \" I have odd characters")
 ```
 
 ### `XML.RowNode`
-- A data structure that can used as a *Tables.jl* source.  It is only lazy in how it access its children.
+- A data structure that can used as a *Tables.jl* source.  It is only lazy in how it accesses its children.
 
 
 ### `XML.RawData`
