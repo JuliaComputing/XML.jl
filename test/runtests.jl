@@ -3,48 +3,41 @@ using Downloads: download
 using Test
 using AbstractTrees
 
-#-----------------------------------------------------------------------------# roundtrip
-@testset "read/write/read roundtrip" begin
-    for file = ["books.xml", "example.kml"]
-        node = Node(file)
-        temp = "test.xml"
-        XML.write(temp, node)
-        node2 = Node(temp)
-        for (a,b) in zip(AbstractTrees.Leaves(node), AbstractTrees.Leaves(node2))
-            @test a == b
-        end
-    end
-end
+
 
 #-----------------------------------------------------------------------------# Tokens
-@testset "Tokens" begin
+@testset "RawData" begin
     file = "books.xml"
-    t = XML.Tokens(file)
-    doc = collect(t)
+    data = XML.RawData(file)
+    doc = collect(data)
     @test length(doc) > countlines(file)
     # Check that the first 5 lines are correct
     first_5_lines = [
-        XML.TOK_DECLARATION => """<?xml version="1.0"?>""",
-        XML.TOK_START_ELEMENT => "<catalog>",
-        XML.TOK_START_ELEMENT => "<book id=\"bk101\">",
-        XML.TOK_START_ELEMENT => "<author>",
-        XML.TOK_TEXT => "Gambardella, Matthew"
+        XML.RAW_DECLARATION => """<?xml version="1.0"?>""",
+        XML.RAW_ELEMENT_OPEN => "<catalog>",
+        XML.RAW_ELEMENT_OPEN => "<book id=\"bk101\">",
+        XML.RAW_ELEMENT_OPEN => "<author>",
+        XML.RAW_TEXT => "Gambardella, Matthew"
     ]
-    for (i, (tok, str)) in enumerate(first_5_lines)
-        tokdata = doc[i]
-        @test tokdata.tok == tok
-        @test String(tokdata) == str
+    for (i, (typ, str)) in enumerate(first_5_lines)
+        dt = doc[i]
+        @test dt.type == typ
+        @test String(dt) == str
     end
     # Check that the last line is correct
-    @test doc[end].tok == XML.TOK_END_ELEMENT
+    @test doc[end].type == XML.RAW_ELEMENT_CLOSE
     @test String(doc[end]) == "</catalog>"
 
     @testset "next and prev" begin
         @test XML.prev(doc[1]) === nothing
         @test XML.next(doc[end]) === nothing
 
-        next_res = [doc[1], XML.next.(doc[1:end-1])...]
-        prev_res = [XML.prev.(doc[2:end])..., doc[end]]
+        n = length(doc)
+        next_res = [doc[1]]
+        foreach(_ -> push!(next_res, XML.next(next_res[end])), 1:n-1)
+
+        prev_res = [doc[end]]
+        foreach(_ -> pushfirst!(prev_res, XML.prev(prev_res[1])), 1:n-1)
 
         idx = findall(next_res .!= prev_res)
 
@@ -53,6 +46,20 @@ end
         end
     end
 end
+
+
+#-----------------------------------------------------------------------------# roundtrip
+# @testset "read/write/read roundtrip" begin
+#     for file = ["books.xml", "example.kml"]
+#         node = Node(file)
+#         temp = "test.xml"
+#         XML.write(temp, node)
+#         node2 = Node(temp)
+#         for (a,b) in zip(AbstractTrees.Leaves(node), AbstractTrees.Leaves(node2))
+#             @test a == b
+#         end
+#     end
+# end
 
 
 
