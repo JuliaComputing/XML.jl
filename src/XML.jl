@@ -91,6 +91,9 @@ RawData(filename::String) = RawData(Mmap.mmap(filename))
 
 parse(x::AbstractString) = RawData(Vector{UInt8}(x))
 
+Tables.rows(o::RawData) = o
+Tables.schema(o::RawData) = Tables.Schema(fieldnames(RawData)[1:end-1], fieldtypes(RawData)[1:end-1])
+
 function Base.show(io::IO, o::RawData)
     print(io, o.depth, ": ", o.type, " (pos=", o.pos, ", len=", o.len, ")")
     o.len > 0 && printstyled(io, ": ", String(o.data[o.pos:o.pos + o.len]); color=:light_green)
@@ -104,7 +107,6 @@ String(o::RawData) = String(view(o))
 
 Base.IteratorSize(::Type{RawData}) = Base.SizeUnknown()
 Base.eltype(::Type{RawData}) = RawData
-Base.isdone(o::RawData) = o.pos + o.len ≥ length(o.data)
 
 function Base.iterate(o::RawData, state=o)
     n = next(state)
@@ -179,6 +181,8 @@ function value(o::RawData)
         String(view(o.data, o.pos + 9 : o.pos + o.len - 3))
     elseif o.type === RAW_COMMENT
         String(view(o.data, o.pos + 4 : o.pos + o.len - 3))
+    elseif o.type === RAW_DTD
+        String(view(o.data, o.pos + 2 : o.pos + o.len - 2))
     else
         nothing
     end
@@ -195,7 +199,7 @@ function children(o::RawData)
         end
         out
     else
-        nothing
+        RawData[]
     end
 end
 
@@ -223,7 +227,12 @@ notspace(x::UInt8) = !isspace(Char(x))
 function next(o::RawData)
     i = o.pos + o.len + 1
     (; depth, data, type) = o
-    i = findnext(notspace, data, i)  # skip insignificant whitespace
+    try
+        i = findnext(notspace, data, i)  # skip insignificant whitespace
+    catch
+        @info String(o)
+        error()
+    end
     isnothing(i) && return nothing
     if type === RAW_ELEMENT_OPEN || type === RAW_DOCUMENT
         depth += 1
@@ -318,57 +327,13 @@ function prev(o::RawData)
 end
 
 
-#-----------------------------------------------------------------------------# Lazy
-struct LazyNode
-    data::RawData
-end
-LazyNode(filename::AbstractString) = LazyNode(RawData(filename))
-
-
-
-# Base.get(o::LazyNode) = RowNode(o.data)
-
-# function next(o::LazyNode)
-#     x = next(o.data)
-#     isnothing(x) ? nothing : LazyNode(x)
-# end
-# function prev(o::LazyNode)
-#     x = prev(o.data)
-#     isnothing(x) ? nothing : LazyNode(x)
-# end
-
-# function Base.show(io::IO, o::LazyNode)
-#     print(io, "LazyNode: ")
-#     show(io, get(o))
-# end
-# function AbstractTrees.children(o::LazyNode)
-#     depth = o.data.depth
-#     out = LazyNode[]
-#     x = o
-#     while !isnothing(x)
-#         x = next(x)
-#         isnothing(x) && break
-#         x.data.tok === TOK_END_ELEMENT && continue
-#         x.data.depth == depth && break
-#         x.data.depth == depth + 1 && push!(out, x)
-#     end
-#     return out
-# end
-# # AbstractTrees.nodevalue(o::LazyNode) = get(o)
-
-# # function AbstractTrees.parent(o::LazyNode)
-#     # TODO
-# # end
-
-
-
 #-----------------------------------------------------------------------------# RowNode
 struct RowNode
     nodetype::NodeType
     tag::Union{String, Nothing}
     attributes::Union{OrderedDict{String, String}, Nothing}
     value::Union{String, Nothing}
-    data::Union{RawData, Nothing}
+    data::RawData
 end
 function RowNode(data::RawData)
     nodetype = _nodetype(data.type)
@@ -377,55 +342,73 @@ function RowNode(data::RawData)
     value = _value(data)
     RowNode(nodetype, tag, attributes, value, data)
 end
+RowNode(file::AbstractString) = RowNode(RawData(file))
 
-# function RowNode(t::RawData)
-#     (; type, pos, len, depth) = t
-#     pos === 0 && return RowNode(DOCUMENT, nothing, nothing, nothing, 0)
-#     data = view(t.data, pos:pos+len)
-#     @views if type === RAW_TEXT  # text
-#         return RowNode(TEXT, nothing, nothing, unescape(String(data), data))
-#     elseif type === RAW_COMMENT  # <!-- ... -->
-#         return RowNode(COMMENT, nothing, nothing, String(data[4:end-3]), data)
-#     elseif type === RAW_CDATA  # <![CDATA[...]]>
-#         return RowNode(CDATA, nothing, nothing, String(data[10:end-3]), data)
-#     elseif type === RAW_DECLARATION  # <?xml attributes... ?>
-#         rng = 7:length(data) - 2
-#         attributes = get_attributes(data[rng])
-#         return RowNode(DECLARATION, nothing, attributes, nothing, data)
-#     elseif  type === RAW_DTD  # <!DOCTYPE ...>
-#         return RowNode(DTD, nothing, nothing, String(data[10:end-1]), data)
-#     elseif type === RAW_ELEMENT_OPEN  # <NAME attributes... >
-#         tag, i = get_name(data, 2)
-#         i = findnext(x -> isletter(Char(x)) || x === UInt8('_'), data, i)
-#         attributes = isnothing(i) ? nothing : get_attributes(data[i:end-1])
-#         return RowNode(ELEMENT, tag, attributes, nothing, data)
-#     elseif type === RAW_ELEMENT_CLOSE  # </NAME>
-#         return nothing
-#     elseif  type === RAW_ELEMENT_SELF_CLOSED  # <NAME attributes... />
-#         tag, i = get_name(data, 2)
-#         i = findnext(x -> isletter(Char(x)) || x === UInt8('_'), data, i)
-#         attributes = isnothing(i) ? nothing : get_attributes(data[i:end-2])
-#         return RowNode(ELEMENT, tag, attributes, nothing, data)
-#     else
-#         error("Unhandled token: $tok.")
-#     end
-# end
+AbstractTrees.children(o::RowNode) = RowNode.(children(o.data))
 
-# AbstractTrees.children(o::RowNode) = missing
+Base.show(io::IO, o::RowNode) = _show_node(io, o)
 
-# Base.show(io::IO, o::RowNode) = _show_node(io, o)
+Base.IteratorSize(::Type{RowNode}) = Base.SizeUnknown()
+Base.eltype(::Type{RowNode}) = RowNode
 
-# Base.IteratorSize(::Type{Rows}) = Base.SizeUnknown()
-# Base.eltype(::Type{Rows}) = RowNode
-# Base.isdone(o::Rows, pos) = isdone(o.file, pos)
+function Base.iterate(o::RowNode, state = o.data)
+    n = next(state)
+    isnothing(n) && return nothing
+    n.type === RAW_ELEMENT_CLOSE && return iterate(o, n)
+    return RowNode(n), n
+end
 
-# function Base.iterate(o::Rows, state = init(o.tokens))
-#     n = next(state)
-#     isnothing(n) && return nothing
-#     n.tok === TOK_END_ELEMENT && return iterate(o, n)
-#     return RowNode(n), n
-# end
+function next(o::RowNode)
+    n = next(o.data)
+    isnothing(n) && return nothing
+    n.type === RAW_ELEMENT_CLOSE && return next(RowNode(n))
+    return RowNode(n)
+end
+function prev(o::RowNode)
+    n = prev(o.data)
+    isnothing(n) && return nothing
+    n.type === RAW_ELEMENT_CLOSE && return prev(RowNode(n))
+    return RowNode(n)
+end
 
+#-----------------------------------------------------------------------------# Rows
+struct Rows
+    node::RowNode
+end
+Rows(file::AbstractString) = Rows(RowNode(file))
+
+Base.propertynames(::Rows) = (:depth, :nodetype, :tag, :attributes, :value)
+function Base.getproperty(o::Rows, x::Symbol)
+    node = getfield(o, :node)
+    x === :depth ? node.data.depth :
+    x === :nodetype ? node.nodetype :
+    x === :tag ? node.tag :
+    x === :attributes ? node.attributes :
+    x === :value ? node.value : error("XML.Row does not have property: $x")
+end
+
+Tables.rows(o::Rows) = o
+Tables.schema(o::Rows) = Tables.Schema(
+    (:depth, :nodetype, :tag, :attributes, :value),
+    (Int, NodeType, Union{Nothing, String}, Union{Nothing, OrderedDict{String, String}}, Union{Nothing, String}),
+)
+
+Base.IteratorSize(::Type{Rows}) = Base.SizeUnknown()
+Base.eltype(::Type{Rows}) = Rows
+
+function Base.iterate(o::Rows, state = getfield(o, :node))
+    n = next(state)
+    isnothing(n) ? nothing : (Rows(n), n)
+end
+
+function next(o::Rows)
+    n = next(getfield(o, :node))
+    isnothing(n) ? nothing : Rows(n)
+end
+function prev(o::Rows)
+    n = prev(getfield(o, :node))
+    isnothing(n) ? nothing : Rows(n)
+end
 
 # #-----------------------------------------------------------------------------# Rows
 # struct Rows
@@ -551,55 +534,37 @@ AbstractTrees.children(o::Node) = isnothing(o.children) ? [] : o.children
 
 Base.show(io::IO, o::Node) = _show_node(io, o)
 
-# #-----------------------------------------------------------------------------# read
-# read(filename::AbstractString) = Node(Tokens(filename))
-# read(io::IO) = Node(Tokens("__UKNOWN_FILE__", read(io)))
-
-# Node(filename::String) = Node(Tokens(filename))
-
-# function Node(t::Tokens)
-#     doc = Node(; nodetype=DOCUMENT_NODE, children=[])
-#     stack = [doc]
-#     for row in Rows(t)
-#         temp = Node(row)
-#         node = Node(temp; children = row.nodetype === ELEMENT_NODE ? [] : nothing)
-#         filter!(x -> x.depth < node.depth, stack)
-#         push!(stack[end], node)
-#         push!(stack, node)
-#     end
-#     return doc
-# end
 
 # #-----------------------------------------------------------------------------# printing
 function _show_node(io::IO, o)
-    printstyled(io, 2o.depth, ':', o.nodetype, ' '; color=:light_green)
-    if o.nodetype === TEXT_NODE
-        printstyled(io, repr(o.value), color=:light_black)
-    elseif o.nodetype === ELEMENT_NODE
+    printstyled(io, o.nodetype, ' '; color=:light_green)
+    if o.nodetype === TEXT
+        printstyled(io, repr(o.value))
+    elseif o.nodetype === ELEMENT
         printstyled(io, '<', o.tag, color=:light_cyan)
         _print_attrs(io, o)
         printstyled(io, '>', color=:light_cyan)
         _print_n_children(io, o)
-    elseif o.nodetype === DTD_NODE
+    elseif o.nodetype === DTD
         printstyled(io, "<!DOCTYPE", o.tag, color=:light_cyan)
         printstyled(io, o.value, color=:light_black)
         printstyled(io, '>', color=:light_cyan)
-    elseif o.nodetype === DECLARATION_NODE
+    elseif o.nodetype === DECLARATION
         printstyled(io, "<?xml", color=:light_cyan)
         _print_attrs(io, o)
         printstyled(io, '>', color=:light_cyan)
-    elseif o.nodetype === COMMENT_NODE
+    elseif o.nodetype === COMMENT
         printstyled(io, "<!--", color=:light_cyan)
         printstyled(io, o.value, color=:light_black)
         printstyled(io, "-->", color=:light_cyan)
-    elseif o.nodetype === CDATA_NODE
+    elseif o.nodetype === CDATA
         printstyled(io, "<![CDATA[", color=:light_cyan)
         printstyled(io, o.value, color=:light_black)
         printstyled(io, "]]>", color=:light_cyan)
-    elseif o.nodetype === DOCUMENT_NODE
+    elseif o.nodetype === DOCUMENT
         printstyled(io, "Document", color=:light_cyan)
         _print_n_children(io, o)
-    elseif o.nodetype === UNKNOWN_NODE
+    elseif o.nodetype === UNKNOWN
         printstyled(io, "Unknown", color=:light_cyan)
         _print_n_children(io, o)
     else
@@ -608,11 +573,13 @@ function _show_node(io::IO, o)
 end
 
 function _print_attrs(io::IO, o)
-    !isnothing(o.attributes) && printstyled(io, [" $k=\"$v\"" for (k,v) in o.attributes]...; color=:light_black)
+    !isnothing(o.attributes) && printstyled(io, [" $k=\"$v\"" for (k,v) in o.attributes]...; color=:light_yellow)
 end
 function _print_n_children(io::IO, o)
     children = AbstractTrees.children(o)
-    printstyled(io, ismissing(children) || isnothing(children) ? "" : " ($(length(children)) children)", color=:light_black)
+    n = ismissing(children) || isnothing(children) ? 0 : length(children)
+    text = n == 0 ? "" : n == 1 ? " (1 child)" : " ($(length(children)) children)"
+    printstyled(io, text, color=:light_black)
 end
 
 # #-----------------------------------------------------------------------------# write_xml
