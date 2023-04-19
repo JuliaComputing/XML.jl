@@ -518,7 +518,7 @@ Base.show(io::IO, o::Node) = _show_node(io, o)
 
 #-----------------------------------------------------------------------------# Node Constructors
 # auto-detect how to create a Node
-_node(x; depth=-1) = Node(text(string(x)); depth)
+_node(x; depth=-1) = Node(nodetype=TEXT, value=string(x); depth)
 _node(x::Node; depth=x.depth) = Node(x; depth)
 
 module NodeConstructors
@@ -530,26 +530,69 @@ export document, dtd, declaration, processing_instruction, comment, cdata, text,
 
 attrs(kw) = OrderedDict{String,String}(string(k) => string(v) for (k,v) in kw)
 
-document(children::Vector{Node}) = Node(nodetype=DOCUMENT, children)
-document(children::Node...) = document(Node.(children))
+"""
+    document(children::Vector{Node})
+    document(children::Node...)
+"""
+document(children::Vector{Node}) = Node(;nodetype=DOCUMENT, children)
+document(children::Node...) = document(collect(children))
 
+"""
+    dtd(value::AbstractString)
+"""
 dtd(value::AbstractString) = Node(nodetype=DTD, value=String(value))
 
+"""
+    declaration(; attributes...)
+"""
 declaration(attributes::OrderedDict{String,String}) = Node(;nodetype=DECLARATION, attributes)
 declaration(; kw...) = declaration(attrs(kw))
 
+"""
+    processing_instruction(tag::AbstractString; attributes...)
+"""
 processing_instruction(tag, attributes::OrderedDict{String,String}) = Node(;nodetype=PROCESSING_INSTRUCTION, tag=string(tag), attributes)
 processing_instruction(tag; kw...) = processing_instruction(tag, attrs(kw))
 
+"""
+    comment(value::AbstractString)
+"""
 comment(value::AbstractString) = Node(nodetype=COMMENT, value=String(value))
 
+"""
+    cdata(value::AbstractString)
+"""
 cdata(value::AbstractString) = Node(nodetype=CDATA, value=String(value))
 
+"""
+    text(value::AbstractString)
+"""
 text(value::AbstractString) = Node(nodetype=TEXT, value=String(value))
 
+"""
+    element(tag::AbstractString, children::Vector{Node}; attributes...)
+    element(tag::AbstractString, children::Node...; attributes...)
 
-element(tag, children...; kw...) = Node(; nodetype=ELEMENT, tag=string(tag), attributes=attrs(kw))(children...)
-Base.getproperty(::typeof(element), tag::Symbol) = element(string(tag))
+Example:
+
+    using XML.NodeConstructors
+
+    n = element("tag", "child"; key="value")
+    # Node ELEMENT <tag key="value"> (1 child)
+
+    only(n)
+    # Node TEXT "child"
+
+    push!(n, cdata("hello > < ' \" I have odd characters"))
+
+    children(n)
+    # 2-element Vector{Node}:
+    #  Node TEXT "child"
+    #  Node CDATA <![CDATA[hello > < ' " I have odd characters]]>
+"""
+element(tag, children...; kw...) = Node(; nodetype=ELEMENT, tag=string(tag), attributes=attrs(kw))(_node.(children)...)
+element(tag, children::Vector{Node}; kw...) = element(tag, children...; kw...)
+# Base.getproperty(::typeof(element), tag::Symbol) = element(string(tag))
 end
 
 

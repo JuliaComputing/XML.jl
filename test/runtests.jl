@@ -1,7 +1,6 @@
 using XML
 using Downloads: download
 using Test
-using AbstractTrees
 using OrderedCollections
 
 #-----------------------------------------------------------------------------# files
@@ -150,5 +149,26 @@ end
 end
 
 #-----------------------------------------------------------------------------# Node writing
+using XML.NodeConstructors
+
 @testset "Node writing" begin
+    doc = document(
+        dtd("root_tag"),
+        declaration(version=1.0),
+        comment("comment"),
+        processing_instruction("xml-stylesheet", href="mystyle.css", type="text/css"),
+        element("root_tag", cdata("cdata"), text("text"))
+    )
+    @test map(nodetype, children(doc)) == [
+        XML.DTD,
+        XML.DECLARATION,
+        XML.COMMENT,
+        XML.PROCESSING_INSTRUCTION,
+        XML.ELEMENT
+    ]
+    @test length(children(doc[end])) == 2
+    @test nodetype(doc[end][1]) == XML.CDATA
+    @test nodetype(doc[end][2]) == XML.TEXT
+    @test value(doc[end][1]) == "cdata"
+    @test value(doc[end][2]) == "text"
 end

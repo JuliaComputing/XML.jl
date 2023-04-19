@@ -43,7 +43,7 @@ doc[end][2]  # Second child of root
 
 ## Data Structures
 
-**`XML.Node`**
+### `XML.Node`
 - An eager data structure that loads the entire XML DOM in memory.
 - **This is what you should use to build an XML document programmatically.**
 - `Node`s have some additional methods that aid in construction/mutation:
@@ -65,11 +65,21 @@ parent[2] = child
 Node(node; kw...)
 ```
 
-**`XML.RowNode`**
+- Bring convenience functions into your namespace with `using XML.NodeConstructors`:
+
+```julia
+using XML.NodeConstructors
+# cdata, comment, declaration, document, dtd, element, processing_instruction, text
+
+cdata("hello > < ' \" I have odd characters")
+# Node CDATA <![CDATA[hello > < ' " I have odd characters]]>
+```
+
+### `XML.RowNode`
 - A data structure that can used as a *Tables.jl* source.  It is only lazy in how it access its children.
 
 
-**`XML.RawData`**
+### `XML.RawData`
 - A super lazy data structure that holds the reference `Vector{UInt8}` data and the sta
 
 ## Reading
