@@ -8,5 +8,6 @@ filename = tempname()
 
 #-----------------------------------------------------------------------------# read
 @info "XML lazy read" @benchmark XML.RawData($file)
+@info "XML read" @benchmark Node($file)
 
 @info "EzXML read" @benchmark EzXML.readxml($file)

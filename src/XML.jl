@@ -3,27 +3,30 @@ module XML
 using OrderedCollections: OrderedDict
 using Mmap
 using Tables
-import AbstractTrees: AbstractTrees, children
+import AbstractTrees: AbstractTrees, children, parent
 
-export Node, NodeType, children
+export Node, RowNode,
+    children, parent, nodetype, tag, attributes, value, depth, next, prev
 
 #-----------------------------------------------------------------------------# escape/unescape
-escape_chars = ['&' => "&amp;", '"' => "&quot;", ''' => "&#39;", '<' => "&lt;", '>' => "&gt;"]
+# This is only used within TEXT nodes, so we ignore ''' and '"'
+const escape_chars = ('&' => "&amp;", '<' => "&lt;", '>' => "&gt;")
 escape(x::AbstractString) = replace(x, escape_chars...)
 unescape(x::AbstractString) = replace(x, reverse.(escape_chars)...)
 
 #-----------------------------------------------------------------------------# NodeType
 """
     NodeType:
-    - DOCUMENT         # prolog & root ELEMENT
-    - DTD              # <!DOCTYPE ...>
-    - DECLARATION      # <?xml attributes... ?>
-    - COMMENT          # <!-- ... -->
-    - CDATA            # <![CDATA[...]]>
-    - ELEMENT          # <NAME attributes... > children... </NAME>
-    - TEXT             # text
+    - DOCUMENT                  # prolog & root ELEMENT
+    - DTD                       # <!DOCTYPE ...>
+    - DECLARATION               # <?xml attributes... ?>
+    - PROCESSING_INSTRUCTION    # <?NAME attributes... ?>
+    - COMMENT                   # <!-- ... -->
+    - CDATA                     # <![CDATA[...]]>
+    - ELEMENT                   # <NAME attributes... > children... </NAME>
+    - TEXT                      # text
 """
-@enum(NodeType, DOCUMENT, DTD, DECLARATION, COMMENT, CDATA, ELEMENT, TEXT)
+@enum(NodeType, DOCUMENT, DTD, DECLARATION, PROCESSING_INSTRUCTION, COMMENT, CDATA, ELEMENT, TEXT)
 
 #-----------------------------------------------------------------------------# RawDataType
 """
@@ -32,24 +35,28 @@ unescape(x::AbstractString) = replace(x, reverse.(escape_chars)...)
     - RAW_COMMENT                 # <!-- ... -->
     - RAW_CDATA                   # <![CDATA[...]]>
     - RAW_DECLARATION             # <?xml attributes... ?>
+    - RAW_PROCESSING_INSTRUCTION  # <?NAME attributes... ?>
     - RAW_DTD                     # <!DOCTYPE ...>
     - RAW_ELEMENT_OPEN            # <NAME attributes... >
     - RAW_ELEMENT_CLOSE           # </NAME>
     - RAW_ELEMENT_SELF_CLOSED     # <NAME attributes... />
     - RAW_DOCUMENT                # Something to initilize with (not really used)
 """
-@enum(RawDataType, RAW_DOCUMENT, RAW_TEXT, RAW_COMMENT, RAW_CDATA, RAW_DECLARATION, RAW_DTD,
-    RAW_ELEMENT_OPEN, RAW_ELEMENT_CLOSE, RAW_ELEMENT_SELF_CLOSED)
+@enum(RawDataType, RAW_DOCUMENT, RAW_TEXT, RAW_COMMENT, RAW_CDATA, RAW_PROCESSING_INSTRUCTION,
+    RAW_DECLARATION, RAW_DTD, RAW_ELEMENT_OPEN, RAW_ELEMENT_CLOSE, RAW_ELEMENT_SELF_CLOSED)
 
-nodetype(x::RawDataType) = x === RAW_ELEMENT_OPEN ? ELEMENT :
-    x === RAW_ELEMENT_CLOSE ? ELEMENT :
-    x === RAW_ELEMENT_SELF_CLOSED ? ELEMENT :
-    x === RAW_TEXT ? TEXT :
-    x === RAW_COMMENT ? COMMENT :
-    x === RAW_CDATA ? CDATA :
-    x === RAW_DECLARATION ? DECLARATION :
-    x === RAW_DTD ? DTD :
-    x === RAW_DOCUMENT ? DOCUMENT : nothing
+nodetype(x::RawDataType) =
+    x === RAW_ELEMENT_OPEN              ? ELEMENT :
+    x === RAW_ELEMENT_CLOSE             ? ELEMENT :
+    x === RAW_ELEMENT_SELF_CLOSED       ? ELEMENT :
+    x === RAW_TEXT                      ? TEXT :
+    x === RAW_COMMENT                   ? COMMENT :
+    x === RAW_CDATA                     ? CDATA :
+    x === RAW_DECLARATION               ? DECLARATION :
+    x === RAW_DTD                       ? DTD :
+    x === RAW_PROCESSING_INSTRUCTION    ? PROCESSING_INSTRUCTION :
+    x === RAW_DOCUMENT                  ? DOCUMENT :
+    nothing
 
 #-----------------------------------------------------------------------------# RawData
 """
@@ -62,6 +69,7 @@ Create an iterator over raw chunks of data in an XML file.  Each chunk of data r
     - RAW_COMMENT                 # <!-- ... -->
     - RAW_CDATA                   # <![CDATA[...]]>
     - RAW_DECLARATION             # <?xml attributes... ?>
+    - RAW_PROCESSING_INSTRUCTION  # <?NAME attributes... ?>
     - RAW_DTD                     # <!DOCTYPE ...>
     - RAW_ELEMENT_OPEN            # <NAME attributes... >
     - RAW_ELEMENT_CLOSE           # </NAME>
@@ -78,6 +86,7 @@ Useful functions:
     - value(o::RawData) --> String of the value (or `nothing`).
     - children(o::RawData) --> Vector{RawData} of the children (or `nothing`).
     - parent(o::RawData) --> RawData of the parent (or `nothing`)
+    - depth(o::RawData) --> Int of the depth of the node in the XML DOM.
 """
 struct RawData
     type::RawDataType
@@ -89,7 +98,7 @@ end
 RawData(data::Vector{UInt8}) = RawData(RAW_DOCUMENT, 0, 0, 0, data)
 RawData(filename::String) = RawData(Mmap.mmap(filename))
 
-parse(x::AbstractString) = RawData(Vector{UInt8}(x))
+parse(x::AbstractString, ::Type{RawData}) = RawData(Vector{UInt8}(x))
 
 Tables.rows(o::RawData) = o
 Tables.schema(o::RawData) = Tables.Schema(fieldnames(RawData)[1:end-1], fieldtypes(RawData)[1:end-1])
@@ -153,16 +162,16 @@ function get_attributes(data, i)
     return out
 end
 
-#-----------------------------------------------------------------------------# accessors
+#-----------------------------------------------------------------------------# interface
 nodetype(o::RawData) = nodetype(o.type)
 
 function tag(o::RawData)
-    o.type ∉ [RAW_ELEMENT_OPEN, RAW_ELEMENT_CLOSE, RAW_ELEMENT_SELF_CLOSED] && return nothing
+    o.type ∉ [RAW_ELEMENT_OPEN, RAW_ELEMENT_CLOSE, RAW_ELEMENT_SELF_CLOSED, RAW_PROCESSING_INSTRUCTION] && return nothing
     return get_name(o.data, o.pos + 1)[1]
 end
 
 function attributes(o::RawData)
-    if o.type === RAW_ELEMENT_OPEN || o.type === RAW_ELEMENT_SELF_CLOSED
+    if o.type === RAW_ELEMENT_OPEN || o.type === RAW_ELEMENT_SELF_CLOSED || o.type === RAW_PROCESSING_INSTRUCTION
         i = o.pos
         i = _name_start(o.data, i)
         i = _name_stop(o.data, i)
@@ -178,24 +187,25 @@ function value(o::RawData)
     if o.type === RAW_TEXT
         String(o)
     elseif o.type === RAW_CDATA
-        String(view(o.data, o.pos + 9 : o.pos + o.len - 3))
+        String(view(o.data, o.pos + length("<![CDATA[") : o.pos + o.len - 3))
     elseif o.type === RAW_COMMENT
-        String(view(o.data, o.pos + 4 : o.pos + o.len - 3))
+        String(view(o.data, o.pos + length("<!--") : o.pos + o.len - 3))
     elseif o.type === RAW_DTD
-        String(view(o.data, o.pos + 2 : o.pos + o.len - 2))
+        String(view(o.data, o.pos + length("<!DOCTYPE ") : o.pos + o.len - 1))
     else
         nothing
     end
 end
 
 function children(o::RawData)
-    if o.type === RAW_ELEMENT_OPEN
+    if o.type === RAW_ELEMENT_OPEN || o.type === RAW_DOCUMENT
         depth = o.depth
         out = RawData[]
         for item in o
-            # item.type === RAW_ELEMENT_CLOSE && continue
+            item.type === RAW_ELEMENT_CLOSE && continue  # skip closing tags
             item.depth == depth + 1 && push!(out, item)
             item.depth == depth && break
+            o.type === RAW_DOCUMENT && item.depth == 2 && break # break if we've seen the doc root
         end
         out
     else
@@ -213,13 +223,7 @@ function parent(o::RawData)
     return p
 end
 
-nodetype(o::RawData) = nodetype(o.type)
-
-# sometimes I'd rather use e.g. `nodetype = _nodetype(o)`
-_nodetype = nodetype
-_tag = tag
-_attributes = attributes
-_value = value
+depth(o::RawData) = o.depth
 
 #-----------------------------------------------------------------------------# next RawData
 notspace(x::UInt8) = !isspace(Char(x))
@@ -260,7 +264,11 @@ function next(o::RawData)
                 error("Should be unreachable.  Unexpected typeen: $c$c2$c3")
             end
         elseif c2 === '?'
-            type = RAW_DECLARATION
+            if get_name(data, i + 2)[1] == "xml"
+                type = RAW_DECLARATION
+            else
+                type = RAW_PROCESSING_INSTRUCTION
+            end
             j = findnext(Vector{UInt8}("?>"), data, i)[end]
         elseif c2 === '/'
             type = RAW_ELEMENT_CLOSE
@@ -281,9 +289,10 @@ end
 #-----------------------------------------------------------------------------# prev RawData
 function prev(o::RawData)
     (; depth, data, type) = o
+    type === RAW_DOCUMENT && return nothing
     j = o.pos - 1
     j = findprev(notspace, data, j)  # skip insignificant whitespace
-    isnothing(j) && return nothing
+    isnothing(j) && return RawData(data)  # RAW_DOCUMENT
     c = Char(o.data[j])
     i = j - 1
     next_type = type
@@ -300,8 +309,12 @@ function prev(o::RawData)
             type = RAW_CDATA
             i = findprev(Vector{UInt8}("<![CDATA["), data, j)[1]
         elseif c2 === '?'
-            type = RAW_DECLARATION
-            i = findprev(Vector{UInt8}("<?xml"), data, j)[1]
+            i = findprev(Vector{UInt8}("<?"), data, j)[1]
+            if get_name(data, i + 2)[1] == "xml"
+                type = RAW_DECLARATION
+            else
+                type = RAW_PROCESSING_INSTRUCTION
+            end
         else
             i = findprev(==(UInt8('<')), data, j)
             char = Char(data[i+1])
@@ -328,6 +341,18 @@ end
 
 
 #-----------------------------------------------------------------------------# RowNode
+"""
+    RowNode(file::AbstractString)
+    RowNode(data::XML.RawData)
+
+An XML node that is lazy only in how it accesses its children (available via `children(::RowNode)`).
+
+`RowNode` also satisfies the `Tables.rowaccess` interface for loading an XML file as
+a tabular dataset, e.g.
+
+    using XML, DataFrames
+    df = DataFrame(RowNode("file.xml"))
+"""
 struct RowNode
     nodetype::NodeType
     tag::Union{String, Nothing}
@@ -336,22 +361,47 @@ struct RowNode
     data::RawData
 end
 function RowNode(data::RawData)
-    nodetype = _nodetype(data.type)
-    tag = _tag(data)
-    attributes = _attributes(data)
-    value = _value(data)
+    nodetype = XML.nodetype(data.type)
+    tag = XML.tag(data)
+    attributes = XML.attributes(data)
+    value = XML.value(data)
     RowNode(nodetype, tag, attributes, value, data)
 end
 RowNode(file::AbstractString) = RowNode(RawData(file))
 
-AbstractTrees.children(o::RowNode) = RowNode.(children(o.data))
+Base.parse(x::AbstractString, ::Type{RowNode}) = RowNode(parse(x, RawData))
+
+function Base.getproperty(o::RowNode, x::Symbol)
+    x === :depth && return getfield(o, :data).depth
+    x === :nodetype && return getfield(o, :nodetype)
+    x === :tag && return getfield(o, :tag)
+    x === :attributes && return getfield(o, :attributes)
+    x === :value && return getfield(o, :value)
+    error("XML.RowNode does not have property: $x.")
+end
+
+Base.propertynames(o::RowNode) = (:depth, :nodetype, :tag, :attributes, :value)
+
+Tables.rows(o::RowNode) = o
+Tables.schema(o::RowNode) = Tables.Schema(
+    (:depth, :nodetype, :tag, :attributes, :value),
+    (Int, NodeType, Union{Nothing, String}, Union{Nothing, OrderedDict{String, String}}, Union{Nothing, String}),
+)
+
+children(o::RowNode) = RowNode.(children(getfield(o, :data)))
+tag(o::RowNode) = o.tag
+attributes(o::RowNode) = o.attributes
+value(o::RowNode) = o.type === TEXT ? escape(o.value) : o.value
+nodetype(o::RowNode) = o.nodetype
+depth(o::RowNode) = o.depth
+parent(o::RowNode) = RowNode(parent(getfield(o, :data)))
 
 Base.show(io::IO, o::RowNode) = _show_node(io, o)
 
 Base.IteratorSize(::Type{RowNode}) = Base.SizeUnknown()
 Base.eltype(::Type{RowNode}) = RowNode
 
-function Base.iterate(o::RowNode, state = o.data)
+function Base.iterate(o::RowNode, state = getfield(o, :data))
     n = next(state)
     isnothing(n) && return nothing
     n.type === RAW_ELEMENT_CLOSE && return iterate(o, n)
@@ -359,120 +409,17 @@ function Base.iterate(o::RowNode, state = o.data)
 end
 
 function next(o::RowNode)
-    n = next(o.data)
+    n = next(getfield(o, :data))
     isnothing(n) && return nothing
     n.type === RAW_ELEMENT_CLOSE && return next(RowNode(n))
     return RowNode(n)
 end
 function prev(o::RowNode)
-    n = prev(o.data)
+    n = prev(getfield(o, :data))
     isnothing(n) && return nothing
     n.type === RAW_ELEMENT_CLOSE && return prev(RowNode(n))
     return RowNode(n)
 end
-
-#-----------------------------------------------------------------------------# Rows
-struct Rows
-    node::RowNode
-end
-Rows(file::AbstractString) = Rows(RowNode(file))
-
-Base.propertynames(::Rows) = (:depth, :nodetype, :tag, :attributes, :value)
-function Base.getproperty(o::Rows, x::Symbol)
-    node = getfield(o, :node)
-    x === :depth ? node.data.depth :
-    x === :nodetype ? node.nodetype :
-    x === :tag ? node.tag :
-    x === :attributes ? node.attributes :
-    x === :value ? node.value : error("XML.Row does not have property: $x")
-end
-
-Tables.rows(o::Rows) = o
-Tables.schema(o::Rows) = Tables.Schema(
-    (:depth, :nodetype, :tag, :attributes, :value),
-    (Int, NodeType, Union{Nothing, String}, Union{Nothing, OrderedDict{String, String}}, Union{Nothing, String}),
-)
-
-Base.IteratorSize(::Type{Rows}) = Base.SizeUnknown()
-Base.eltype(::Type{Rows}) = Rows
-
-function Base.iterate(o::Rows, state = getfield(o, :node))
-    n = next(state)
-    isnothing(n) ? nothing : (Rows(n), n)
-end
-
-function next(o::Rows)
-    n = next(getfield(o, :node))
-    isnothing(n) ? nothing : Rows(n)
-end
-function prev(o::Rows)
-    n = prev(getfield(o, :node))
-    isnothing(n) ? nothing : Rows(n)
-end
-
-# #-----------------------------------------------------------------------------# Rows
-# struct Rows
-#     tokens::Tokens
-# end
-# Rows(filename::String) = Rows(Tokens(filename))
-# Tables.rows(o::Rows) = o
-# Tables.schema(o::Rows) = Tables.Schema(fieldnames(RowNode), fieldtypes(RowNode))
-
-# struct RowNode
-#     depth::Int
-#     nodetype::NodeType
-#     tag::Union{String, Nothing}
-#     attributes::Union{OrderedDict{String, String}, Nothing}
-#     value::Union{String, Nothing}
-# end
-# function RowNode(t::TokenData)
-#     (; tok, pos, len, depth) = t
-#     pos === 0 && return RowNode(0, DOCUMENT_NODE, nothing, nothing, nothing)
-#     data = view(t.data, pos:pos+len)
-#     @views if tok === TOK_TEXT  # text
-#         return RowNode(depth, TEXT_NODE, nothing, nothing, unescape(String(data)))
-#     elseif tok === TOK_COMMENT  # <!-- ... -->
-#         return RowNode(depth, COMMENT_NODE, nothing, nothing, String(data[4:end-3]))
-#     elseif tok === TOK_CDATA  # <![CDATA[...]]>
-#         return RowNode(depth, CDATA_NODE, nothing, nothing, String(data[10:end-3]))
-#     elseif tok === TOK_DECLARATION  # <?xml attributes... ?>
-#         rng = 7:length(data) - 2
-#         attributes = get_attributes(data[rng])
-#         return RowNode(depth, DECLARATION_NODE, nothing, attributes, nothing)
-#     elseif  tok === TOK_DTD  # <!DOCTYPE ...>
-#         return RowNode(depth, DTD_NODE, nothing, nothing, String(data[10:end-1]))
-#     elseif tok === TOK_START_ELEMENT  # <NAME attributes... >
-#         tag, i = get_name(data, 2)
-#         i = findnext(x -> isletter(Char(x)) || x === UInt8('_'), data, i)
-#         attributes = isnothing(i) ? nothing : get_attributes(data[i:end-1])
-#         return RowNode(depth, ELEMENT_NODE, tag, attributes, nothing)
-#     elseif tok === TOK_END_ELEMENT  # </NAME>
-#         return nothing
-#     elseif  tok === TOK_SELF_CLOSED_ELEMENT  # <NAME attributes... />
-#         tag, i = get_name(data, 2)
-#         i = findnext(x -> isletter(Char(x)) || x === UInt8('_'), data, i)
-#         attributes = isnothing(i) ? nothing : get_attributes(data[i:end-2])
-#         return RowNode(depth, ELEMENT_NODE, tag, attributes, nothing)
-#     else
-#         error("Unhandled token: $tok.")
-#     end
-# end
-
-# AbstractTrees.children(o::RowNode) = missing
-
-# Base.show(io::IO, o::RowNode) = _show_node(io, o)
-
-# Base.IteratorSize(::Type{Rows}) = Base.SizeUnknown()
-# Base.eltype(::Type{Rows}) = RowNode
-# Base.isdone(o::Rows, pos) = isdone(o.file, pos)
-
-# function Base.iterate(o::Rows, state = init(o.tokens))
-#     n = next(state)
-#     isnothing(n) && return nothing
-#     n.tok === TOK_END_ELEMENT && return iterate(o, n)
-#     return RowNode(n), n
-# end
-
 
 #-----------------------------------------------------------------------------# Node
 Base.@kwdef struct Node
@@ -483,6 +430,24 @@ Base.@kwdef struct Node
     children::Union{Nothing, Vector{Node}} = nothing
     depth::Int = 0
 end
+Node(nodetype; kw...) = Node(; nodetype, kw...)
+Node(file::AbstractString) = Node(RawData(file))
+Node(data::RawData) = Node(RowNode(data))
+
+function Node(node::RowNode)
+    o = Node(node.nodetype, node.tag, node.attributes, node.value, nothing, node.depth)
+    children = XML.children(node)
+    if !isempty(children)
+        o = Node(o; children=Node[])
+        for child in children
+            push!(o, Node(child))
+        end
+    end
+    return o
+end
+
+Base.parse(x::AbstractString, ::Type{Node}) = Node(parse(x, RawData))
+
 function Node((;nodetype, tag, attributes, value, children, depth)::Node; kw...)
     Node(; nodetype, tag, attributes, value, children, depth, kw...)
 end
@@ -500,29 +465,17 @@ function (o::Node)(children...)
     Node(o; children=out)
 end
 
-# function Node((; depth, nodetype, tag, attributes, value)::RowNode)
-#     Node(; depth, nodetype, tag, attributes, value)
-# end
-# Node(o::TokenData) = Node(RowNode(o))
-
-function Base.:(==)(a::Node, b::Node)
-    a.nodetype == b.nodetype &&
-    a.tag == b.tag &&
-    a.attributes == b.attributes &&
-    a.value == b.value && (
-        (isnothing(a.children) && isnothing(b.children)) ||
-        (isnothing(a.children) && isempty(b.children)) ||
-        (isempty(a.children) && isnothing(b.children)) ||
-        all(ai == bi for (ai,bi) in zip(a.children, b.children))
-    )
+function _nodes_equal(a, b)
+    out = XML.tag(a) == XML.tag(b)
+    out &= XML.nodetype(a) == XML.nodetype(b)
+    out &= XML.attributes(a) == XML.attributes(b)
+    out &= XML.value(a) == XML.value(b)
+    out &= length(XML.children(a)) == length(XML.children(b))
+    out &= all(_nodes_equal(ai, bi) for (ai,bi) in zip(XML.children(a), XML.children(b)))
+    return out
 end
 
-# # function element(nodetype::NodeType, tag = nothing; attributes...)
-# #     attributes = isempty(attributes) ?
-# #         nothing :
-# #         OrderedDict(string(k) => string(v) for (k,v) in attributes)
-# #     Node(; nodetype, tag, attributes)
-# # end
+Base.:(==)(a::Node, b::Node) = _nodes_equal(a, b)
 
 Base.getindex(o::Node, i::Integer) = o.children[i]
 Base.setindex!(o::Node, val, i::Integer) = o.children[i] = Node(val)
@@ -530,39 +483,45 @@ Base.lastindex(o::Node) = lastindex(o.children)
 
 Base.push!(a::Node, b::Node) = push!(a.children, b)
 
-AbstractTrees.children(o::Node) = isnothing(o.children) ? [] : o.children
+children(o::Node) = isnothing(o.children) ? Node[] : o.children
+tag(o::Node) = o.tag
+attributes(o::Node) = o.attributes
+value(o::Node) = o.value
+nodetype(o::Node) = o.nodetype
+depth(o::Node) = o.depth
+parent(o::Node) = nothing  # Nodes only keep track of their children
 
 Base.show(io::IO, o::Node) = _show_node(io, o)
 
 
 # #-----------------------------------------------------------------------------# printing
 function _show_node(io::IO, o)
-    printstyled(io, o.nodetype, ' '; color=:light_green)
+    printstyled(io, typeof(o), ' '; color=:light_black)
+    printstyled(io, nodetype(o), ; color=:light_green)
     if o.nodetype === TEXT
-        printstyled(io, repr(o.value))
+        printstyled(io, repr(value(o)))
     elseif o.nodetype === ELEMENT
-        printstyled(io, '<', o.tag, color=:light_cyan)
+        printstyled(io, " <", tag(o), color=:light_cyan)
         _print_attrs(io, o)
         printstyled(io, '>', color=:light_cyan)
         _print_n_children(io, o)
     elseif o.nodetype === DTD
-        printstyled(io, "<!DOCTYPE", o.tag, color=:light_cyan)
-        printstyled(io, o.value, color=:light_black)
+        printstyled(io, " <!DOCTYPE "; color=:light_cyan)
+        printstyled(io, value(o), color=:light_black)
         printstyled(io, '>', color=:light_cyan)
     elseif o.nodetype === DECLARATION
-        printstyled(io, "<?xml", color=:light_cyan)
+        printstyled(io, " <?xml", color=:light_cyan)
         _print_attrs(io, o)
         printstyled(io, '>', color=:light_cyan)
     elseif o.nodetype === COMMENT
-        printstyled(io, "<!--", color=:light_cyan)
-        printstyled(io, o.value, color=:light_black)
+        printstyled(io, " <!--", color=:light_cyan)
+        printstyled(io, value(o), color=:light_black)
         printstyled(io, "-->", color=:light_cyan)
     elseif o.nodetype === CDATA
-        printstyled(io, "<![CDATA[", color=:light_cyan)
-        printstyled(io, o.value, color=:light_black)
+        printstyled(io, " <![CDATA[", color=:light_cyan)
+        printstyled(io, value(o), color=:light_black)
         printstyled(io, "]]>", color=:light_cyan)
     elseif o.nodetype === DOCUMENT
-        printstyled(io, "Document", color=:light_cyan)
         _print_n_children(io, o)
     elseif o.nodetype === UNKNOWN
         printstyled(io, "Unknown", color=:light_cyan)
@@ -573,7 +532,8 @@ function _show_node(io::IO, o)
 end
 
 function _print_attrs(io::IO, o)
-    !isnothing(o.attributes) && printstyled(io, [" $k=\"$v\"" for (k,v) in o.attributes]...; color=:light_yellow)
+    x = attributes(o)
+    !isnothing(x) && printstyled(io, [" $k=\"$v\"" for (k,v) in x]...; color=:light_yellow)
 end
 function _print_n_children(io::IO, o)
     children = AbstractTrees.children(o)
@@ -582,50 +542,57 @@ function _print_n_children(io::IO, o)
     printstyled(io, text, color=:light_black)
 end
 
-# #-----------------------------------------------------------------------------# write_xml
-# write(x::Node) = (io = IOBuffer(); write(io, x); String(take!(io)))
+#-----------------------------------------------------------------------------# write_xml
+write(x) = (io = IOBuffer(); write(io, x); String(take!(io)))
 
-# write(filename::AbstractString, x::Node) = open(io -> write(io, x), filename, "w")
+write(filename::AbstractString, x) = open(io -> write(io, x), filename, "w")
 
-# function write(io::IO, x::Node; indent = "   ")
-#     padding = indent ^ max(0, x.depth - 1)
-#     print(io, padding)
-#     if x.nodetype === TEXT_NODE
-#         print(io, escape(x.value))
-#     elseif x.nodetype === ELEMENT_NODE
-#         print(io, '<', x.tag)
-#         _print_attrs(io, x)
-#         print(io, isnothing(x.children) ? '/' : "", '>')
-#         single_text_child = !isnothing(x.children) && length(x.children) == 1 && x.children[1].nodetype === TEXT_NODE
-#         if single_text_child
-#             write(io, only(x.children); indent="")
-#             print(io, "</", x.tag, '>')
-#         elseif !isnothing(x.children)
-#             println(io)
-#             foreach(AbstractTrees.children(x)) do child
-#                 write(io, child; indent)
-#                 println(io)
-#             end
-#             print(io, padding, "</", x.tag, '>')
-#         end
-#     elseif x.nodetype === DTD_NODE
-#         print(io, "<!DOCTYPE", x.value, '>')
-#     elseif x.nodetype === DECLARATION_NODE
-#         print(io, "<?xml")
-#         _print_attrs(io, x)
-#         print(io, "?>")
-#     elseif x.nodetype === COMMENT_NODE
-#         print(io, "<!--", x.value, "-->")
-#     elseif x.nodetype === CDATA_NODE
-#         print(io, "<![CDATA[", x.value, "]]>")
-#     elseif x.nodetype === DOCUMENT_NODE
-#         foreach(AbstractTrees.children(x)) do child
-#             write(io, child; indent)
-#             println(io)
-#         end
-#     else
-#         error("Unreachable case reached during XML.write")
-#     end
-# end
+function write(io::IO, x; indent = "   ")
+    nodetype = XML.nodetype(x)
+    tag = XML.tag(x)
+    value = XML.value(x)
+    children = XML.children(x)
+    depth = XML.depth(x)
+
+    padding = indent ^ max(0, depth - 1)
+    print(io, padding)
+    if nodetype === TEXT
+        print(io, unescape(value))
+    elseif nodetype === ELEMENT
+        print(io, '<', tag)
+        _print_attrs(io, x)
+        print(io, isnothing(children) ? '/' : "", '>')
+        if !isempty(children)
+            if length(children) == 1 && XML.nodetype(only(children)) === TEXT
+                write(io, only(children); indent="")
+                print(io, "</", tag, '>')
+            else
+                println(io)
+                foreach(children) do child
+                    write(io, child; indent)
+                    println(io)
+                end
+                print(io, padding, "</", tag, '>')
+            end
+        end
+    elseif nodetype === DTD
+        print(io, "<!DOCTYPE", value, '>')
+    elseif nodetype === DECLARATION
+        print(io, "<?xml")
+        _print_attrs(io, x)
+        print(io, "?>")
+    elseif nodetype === COMMENT
+        print(io, "<!--", value, "-->")
+    elseif nodetype === CDATA
+        print(io, "<![CDATA[", value, "]]>")
+    elseif nodetype === DOCUMENT
+        foreach(AbstractTrees.children(x)) do child
+            write(io, child; indent)
+            println(io)
+        end
+    else
+        error("Unreachable case reached during XML.write")
+    end
+end
 
 end

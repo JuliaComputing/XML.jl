@@ -4,6 +4,19 @@ using Test
 using AbstractTrees
 using OrderedCollections
 
+#-----------------------------------------------------------------------------# files
+xml_spec = download("http://www.w3.org/2001/xml.xsd")
+kml_spec = download("http://schemas.opengis.net/kml/2.2.0/ogckml22.xsd")
+books = "books.xml"
+example_kml = "example.kml"
+
+all_files = [
+    "XML Spec" => xml_spec,
+    "KML Spec" => kml_spec,
+    "books.xml" => books,
+    "example.kml" => example_kml
+]
+
 #-----------------------------------------------------------------------------# RawData
 @testset "RawData tag/attributes/value" begin
     examples = [
@@ -11,7 +24,7 @@ using OrderedCollections
             nodetype = XML.DTD,
             tag=nothing,
             attributes=nothing,
-            value=nothing),
+            value="html"),
 
         (xml = "<?xml version=\"1.0\" key=\"value\"?>",
             nodetype = XML.DECLARATION,
@@ -38,7 +51,7 @@ using OrderedCollections
     ]
     for x in examples
         @info "Testing: $(x.xml)"
-        data = XML.next(XML.parse(x.xml))
+        data = XML.next(XML.parse(x.xml, XML.RawData))
         @test XML.nodetype(data) == x.nodetype
         @test XML.tag(data) == x.tag
         @test XML.attributes(data) == x.attributes
@@ -114,73 +127,21 @@ end
     end
 end
 
-
 #-----------------------------------------------------------------------------# roundtrip
-# @testset "read/write/read roundtrip" begin
-#     for file = ["books.xml", "example.kml"]
-#         node = Node(file)
-#         temp = "test.xml"
-#         XML.write(temp, node)
-#         node2 = Node(temp)
-#         for (a,b) in zip(AbstractTrees.Leaves(node), AbstractTrees.Leaves(node2))
-#             @test a == b
-#         end
-#     end
-# end
-
-
-
-# @testset "XML.jl" begin
-#     @testset "Separate structs" begin
-#         @testset "example.kml" begin
-#             doc = Document(joinpath(@__DIR__, "example.kml"))
-#             write("test.xml", doc)
-#             doc2 = Document("test.xml")
-#             @test doc == doc2
-#         end
-#         @testset "equality" begin
-#             @test XML.h("tag"; x=1, y=2) == XML.h("tag"; y=2, x=1)
-#             @test XML.h("tag"; x=1, y=2) != XML.h("tag"; y=1, x=1)
-#         end
-
-#         @testset "books.xml" begin
-#             doc = Document(joinpath(@__DIR__, "books.xml"))
-#             write("test.xml", doc)
-#             doc2 = Document("test.xml")
-#             @test doc == doc2
-#         end
-
-#         @testset "KML spec" begin
-#             doc = Document(download("http://schemas.opengis.net/kml/2.2.0/ogckml22.xsd"))
-#             write("test.xml", doc)
-#             doc2 = Document("test.xml")
-#             @test doc == doc2
-#         end
-#     end
-
-#     @testset "Node" begin
-#         @testset "example.kml" begin
-#             doc = XML.readnode(joinpath(@__DIR__, "example.kml"))
-#             write("test.xml", doc)
-#             doc2 = XML.readnode("test.xml")
-#             @test doc == doc2
-#         end
-
-#         @testset "books.xml" begin
-#             doc = XML.readnode(joinpath(@__DIR__, "books.xml"))
-#             write("test.xml", doc)
-#             doc2 = XML.readnode("test.xml")
-#             @test doc == doc2
-#         end
-
-#         @testset "KML spec" begin
-#             doc = XML.readnode(download("http://schemas.opengis.net/kml/2.2.0/ogckml22.xsd"))
-#             write("test.xml", doc)
-#             doc2 = XML.readnode("test.xml")
-#             @test doc == doc2
-#         end
-#     end
-
-#     # cleanup
-    rm("test.xml", force=true)
-# end
+@testset "read/write/read roundtrip" begin
+    for (name, path) = all_files
+        @info "read/write/read roundtrip" name
+        node = Node(path)
+        temp = tempname() * ".xml"
+        XML.write(temp, node)
+        node2 = Node(temp)
+        @test node == node2
+        for (a,b) in zip(AbstractTrees.Leaves(node), AbstractTrees.Leaves(node2))
+            if a != b
+                @info a
+                @info b
+                error()
+            end
+        end
+    end
+end
