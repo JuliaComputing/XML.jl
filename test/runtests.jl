@@ -50,7 +50,7 @@ all_files = [
             value="cdata test"),
     ]
     for x in examples
-        @info "Testing: $(x.xml)"
+        # @info "Testing: $(x.xml)"
         data = XML.next(XML.parse(x.xml, XML.RawData))
         @test XML.nodetype(data) == x.nodetype
         @test XML.tag(data) == x.tag
@@ -82,7 +82,8 @@ end
     @test String(doc[end]) == "</catalog>"
 
     @testset "next and prev" begin
-        @test XML.prev(doc[1]) === nothing
+        @test XML.prev(doc[1]) === data
+        @test prev(data) === nothing
         @test XML.next(doc[end]) === nothing
 
         n = length(doc)
@@ -130,18 +131,24 @@ end
 #-----------------------------------------------------------------------------# roundtrip
 @testset "read/write/read roundtrip" begin
     for (name, path) = all_files
-        @info "read/write/read roundtrip" name
+        # @info "read/write/read roundtrip" name
         node = Node(path)
         temp = tempname() * ".xml"
-        XML.write(temp, node)
+        XML.write(temp, node; indent = " ")
         node2 = Node(temp)
         @test node == node2
-        for (a,b) in zip(AbstractTrees.Leaves(node), AbstractTrees.Leaves(node2))
-            if a != b
-                @info a
-                @info b
-                error()
-            end
-        end
+
+        # For debugging:
+        # for (a,b) in zip(AbstractTrees.Leaves(node), AbstractTrees.Leaves(node2))
+        #     if a != b
+        #         @info a
+        #         @info b
+        #         error()
+        #     end
+        # end
     end
+end
+
+#-----------------------------------------------------------------------------# Node writing
+@testset "Node writing" begin
 end

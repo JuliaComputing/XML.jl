@@ -9,8 +9,8 @@ export Node, RowNode,
     children, parent, nodetype, tag, attributes, value, depth, next, prev
 
 #-----------------------------------------------------------------------------# escape/unescape
-# This is only used within TEXT nodes, so we ignore ''' and '"'
-const escape_chars = ('&' => "&amp;", '<' => "&lt;", '>' => "&gt;")
+# only used by TEXT nodes
+const escape_chars = ('&' => "&amp;", '<' => "&lt;", '>' => "&gt;", "'" => "&apos;", '"' => "&quot;")
 escape(x::AbstractString) = replace(x, escape_chars...)
 unescape(x::AbstractString) = replace(x, reverse.(escape_chars)...)
 
@@ -163,13 +163,28 @@ function get_attributes(data, i)
 end
 
 #-----------------------------------------------------------------------------# interface
+"""
+    nodetype(node) --> XML.NodeType
+
+Return the `XML.NodeType` of the node.
+"""
 nodetype(o::RawData) = nodetype(o.type)
 
+"""
+    tag(node) --> String or Nothing
+
+Return the tag name of `ELEMENT` and `PROCESESSING_INSTRUCTION` nodes.
+"""
 function tag(o::RawData)
     o.type ∉ [RAW_ELEMENT_OPEN, RAW_ELEMENT_CLOSE, RAW_ELEMENT_SELF_CLOSED, RAW_PROCESSING_INSTRUCTION] && return nothing
     return get_name(o.data, o.pos + 1)[1]
 end
 
+"""
+    attributes(node) --> OrderedDict{String, String} or Nothing
+
+Return the attributes of `ELEMENT`, `DECLARATION`, or `PROCESSING_INSTRUCTION` nodes.
+"""
 function attributes(o::RawData)
     if o.type === RAW_ELEMENT_OPEN || o.type === RAW_ELEMENT_SELF_CLOSED || o.type === RAW_PROCESSING_INSTRUCTION
         i = o.pos
@@ -183,9 +198,14 @@ function attributes(o::RawData)
     end
 end
 
+"""
+    value(node) --> String or Nothing
+
+Return the value of `TEXT`, `CDATA`, `COMMENT`, or `DTD` nodes.
+"""
 function value(o::RawData)
     if o.type === RAW_TEXT
-        String(o)
+        unescape(String(o))
     elseif o.type === RAW_CDATA
         String(view(o.data, o.pos + length("<![CDATA[") : o.pos + o.len - 3))
     elseif o.type === RAW_COMMENT
@@ -197,6 +217,11 @@ function value(o::RawData)
     end
 end
 
+"""
+    children(node) --> Vector{typeof(node)}
+
+Return the children the node.  Will only be nonempty for `ELEMENT` and `DOCUMENT` nodes.
+"""
 function children(o::RawData)
     if o.type === RAW_ELEMENT_OPEN || o.type === RAW_DOCUMENT
         depth = o.depth
@@ -213,6 +238,11 @@ function children(o::RawData)
     end
 end
 
+"""
+    parent(node) --> typeof(node), Nothing
+
+Return the parent of the node.  Will be `nothing` for `DOCUMENT` nodes.  Not defined for `XML.Node`.
+"""
 function parent(o::RawData)
     depth = o.depth
     depth === 1 && return nothing
@@ -228,15 +258,16 @@ depth(o::RawData) = o.depth
 #-----------------------------------------------------------------------------# next RawData
 notspace(x::UInt8) = !isspace(Char(x))
 
+"""
+    next(node) --> typeof(node) or Nothing
+
+Return the next node in the document during depth-first traversal.  Depth-first is the order you
+would visit nodes by reading top-down through an XML file.  Not defined for `XML.Node`.
+"""
 function next(o::RawData)
     i = o.pos + o.len + 1
     (; depth, data, type) = o
-    try
-        i = findnext(notspace, data, i)  # skip insignificant whitespace
-    catch
-        @info String(o)
-        error()
-    end
+    i = findnext(notspace, data, i)  # skip insignificant whitespace
     isnothing(i) && return nothing
     if type === RAW_ELEMENT_OPEN || type === RAW_DOCUMENT
         depth += 1
@@ -287,6 +318,11 @@ function next(o::RawData)
 end
 
 #-----------------------------------------------------------------------------# prev RawData
+"""
+    prev(node) --> typeof(node), Nothing, or Missing (only for XML.Node)
+
+Return the previous node in the document during depth-first traversal.  Not defined for `XML.Node`.
+"""
 function prev(o::RawData)
     (; depth, data, type) = o
     type === RAW_DOCUMENT && return nothing
@@ -346,6 +382,7 @@ end
     RowNode(data::XML.RawData)
 
 An XML node that is lazy only in how it accesses its children (available via `children(::RowNode)`).
+`RowNode`s are tied to a `RawData` object; users should never mutate `RowNode` fields.
 
 `RowNode` also satisfies the `Tables.rowaccess` interface for loading an XML file as
 a tabular dataset, e.g.
@@ -369,7 +406,7 @@ function RowNode(data::RawData)
 end
 RowNode(file::AbstractString) = RowNode(RawData(file))
 
-Base.parse(x::AbstractString, ::Type{RowNode}) = RowNode(parse(x, RawData))
+parse(x::AbstractString, ::Type{RowNode}) = RowNode(parse(x, RawData))
 
 function Base.getproperty(o::RowNode, x::Symbol)
     x === :depth && return getfield(o, :data).depth
@@ -391,7 +428,7 @@ Tables.schema(o::RowNode) = Tables.Schema(
 children(o::RowNode) = RowNode.(children(getfield(o, :data)))
 tag(o::RowNode) = o.tag
 attributes(o::RowNode) = o.attributes
-value(o::RowNode) = o.type === TEXT ? escape(o.value) : o.value
+value(o::RowNode) = nodetype(o) === TEXT ? o.value : o.value
 nodetype(o::RowNode) = o.nodetype
 depth(o::RowNode) = o.depth
 parent(o::RowNode) = RowNode(parent(getfield(o, :data)))
@@ -428,7 +465,7 @@ Base.@kwdef struct Node
     attributes::Union{Nothing, OrderedDict{String, String}} = nothing
     value::Union{Nothing, String} = nothing
     children::Union{Nothing, Vector{Node}} = nothing
-    depth::Int = 0
+    depth::Int = -1
 end
 Node(nodetype; kw...) = Node(; nodetype, kw...)
 Node(file::AbstractString) = Node(RawData(file))
@@ -446,40 +483,26 @@ function Node(node::RowNode)
     return o
 end
 
-Base.parse(x::AbstractString, ::Type{Node}) = Node(parse(x, RawData))
+parse(x::AbstractString, ::Type{Node} = Node) = Node(parse(x, RawData))
 
 function Node((;nodetype, tag, attributes, value, children, depth)::Node; kw...)
+    depth = depth == -1 ? 1 : depth
+    children = isnothing(children) ? nothing : Node.(children, depth=depth+1)
     Node(; nodetype, tag, attributes, value, children, depth, kw...)
 end
 function (o::Node)(children...)
     isempty(children) && return o
     out = sizehint!(Node[], length(children))
     foreach(children) do x
-        if x isa Node
-            push!(out, Node(x; depth=o.depth + 1))
-        else
-            push!(out, Node(nodetype=TEXT_NODE, value=string(x), depth=o.depth + 1))
-        end
+        push!(out, _node(x; depth=o.depth + 1))
     end
 
     Node(o; children=out)
 end
 
-function _nodes_equal(a, b)
-    out = XML.tag(a) == XML.tag(b)
-    out &= XML.nodetype(a) == XML.nodetype(b)
-    out &= XML.attributes(a) == XML.attributes(b)
-    out &= XML.value(a) == XML.value(b)
-    out &= length(XML.children(a)) == length(XML.children(b))
-    out &= all(_nodes_equal(ai, bi) for (ai,bi) in zip(XML.children(a), XML.children(b)))
-    return out
-end
+Base.:(==)(a::Node, b::Node) = nodes_equal(a, b)
 
-Base.:(==)(a::Node, b::Node) = _nodes_equal(a, b)
-
-Base.getindex(o::Node, i::Integer) = o.children[i]
 Base.setindex!(o::Node, val, i::Integer) = o.children[i] = Node(val)
-Base.lastindex(o::Node) = lastindex(o.children)
 
 Base.push!(a::Node, b::Node) = push!(a.children, b)
 
@@ -493,13 +516,77 @@ parent(o::Node) = nothing  # Nodes only keep track of their children
 
 Base.show(io::IO, o::Node) = _show_node(io, o)
 
+#-----------------------------------------------------------------------------# Node Constructors
+# auto-detect how to create a Node
+_node(x; depth=-1) = Node(text(string(x)); depth)
+_node(x::Node; depth=x.depth) = Node(x; depth)
 
-# #-----------------------------------------------------------------------------# printing
+module NodeConstructors
+import .._node
+import ..Node, ..OrderedDict
+import ..TEXT, ..DOCUMENT, ..DTD, ..DECLARATION, ..PROCESSING_INSTRUCTION, ..COMMENT, ..CDATA, ..ELEMENT
+
+export document, dtd, declaration, processing_instruction, comment, cdata, text, element
+
+attrs(kw) = OrderedDict{String,String}(string(k) => string(v) for (k,v) in kw)
+
+document(children::Vector{Node}) = Node(nodetype=DOCUMENT, children)
+document(children::Node...) = document(Node.(children))
+
+dtd(value::AbstractString) = Node(nodetype=DTD, value=String(value))
+
+declaration(attributes::OrderedDict{String,String}) = Node(;nodetype=DECLARATION, attributes)
+declaration(; kw...) = declaration(attrs(kw))
+
+processing_instruction(tag, attributes::OrderedDict{String,String}) = Node(;nodetype=PROCESSING_INSTRUCTION, tag=string(tag), attributes)
+processing_instruction(tag; kw...) = processing_instruction(tag, attrs(kw))
+
+comment(value::AbstractString) = Node(nodetype=COMMENT, value=String(value))
+
+cdata(value::AbstractString) = Node(nodetype=CDATA, value=String(value))
+
+text(value::AbstractString) = Node(nodetype=TEXT, value=String(value))
+
+
+element(tag, children...; kw...) = Node(; nodetype=ELEMENT, tag=string(tag), attributes=attrs(kw))(children...)
+Base.getproperty(::typeof(element), tag::Symbol) = element(string(tag))
+end
+
+
+
+
+
+
+#-----------------------------------------------------------------------------# !!! common !!!
+# Everything below here is common to all data structures
+
+#-----------------------------------------------------------------------------# nodes_equal
+function nodes_equal(a, b)
+    out = XML.tag(a) == XML.tag(b)
+    out &= XML.nodetype(a) == XML.nodetype(b)
+    out &= XML.attributes(a) == XML.attributes(b)
+    out &= XML.value(a) == XML.value(b)
+    out &= length(XML.children(a)) == length(XML.children(b))
+    out &= all(nodes_equal(ai, bi) for (ai,bi) in zip(XML.children(a), XML.children(b)))
+    return out
+end
+
+#-----------------------------------------------------------------------------# parse
+Base.parse(::Type{T}, str::AbstractString) where {T} = parse(str, T)
+
+#-----------------------------------------------------------------------------# indexing
+Base.getindex(o::Union{Node,RawData,RowNode}, i::Integer) = children(o)[i]
+Base.getindex(o::Union{Node,RawData,RowNode}, ::Colon) = children(o)
+Base.lastindex(o::Union{Node,RawData,RowNode}) = lastindex(children(o))
+
+Base.only(o::Union{Node,RawData,RowNode}) = only(children(o))
+
+#-----------------------------------------------------------------------------# printing
 function _show_node(io::IO, o)
     printstyled(io, typeof(o), ' '; color=:light_black)
     printstyled(io, nodetype(o), ; color=:light_green)
     if o.nodetype === TEXT
-        printstyled(io, repr(value(o)))
+        printstyled(io, ' ', repr(value(o)))
     elseif o.nodetype === ELEMENT
         printstyled(io, " <", tag(o), color=:light_cyan)
         _print_attrs(io, o)
@@ -512,7 +599,11 @@ function _show_node(io::IO, o)
     elseif o.nodetype === DECLARATION
         printstyled(io, " <?xml", color=:light_cyan)
         _print_attrs(io, o)
-        printstyled(io, '>', color=:light_cyan)
+        printstyled(io, "?>", color=:light_cyan)
+    elseif o.nodetype === PROCESSING_INSTRUCTION
+        printstyled(io, " <?", tag(o), color=:light_cyan)
+        _print_attrs(io, o)
+        printstyled(io, "?>", color=:light_cyan)
     elseif o.nodetype === COMMENT
         printstyled(io, " <!--", color=:light_cyan)
         printstyled(io, value(o), color=:light_black)
@@ -536,16 +627,15 @@ function _print_attrs(io::IO, o)
     !isnothing(x) && printstyled(io, [" $k=\"$v\"" for (k,v) in x]...; color=:light_yellow)
 end
 function _print_n_children(io::IO, o)
-    children = AbstractTrees.children(o)
-    n = ismissing(children) || isnothing(children) ? 0 : length(children)
-    text = n == 0 ? "" : n == 1 ? " (1 child)" : " ($(length(children)) children)"
+    n = length(children(o))
+    text = n == 0 ? "" : n == 1 ? " (1 child)" : " ($n children)"
     printstyled(io, text, color=:light_black)
 end
 
 #-----------------------------------------------------------------------------# write_xml
-write(x) = (io = IOBuffer(); write(io, x); String(take!(io)))
+write(x; kw...) = (io = IOBuffer(); write(io, x; kw...); String(take!(io)))
 
-write(filename::AbstractString, x) = open(io -> write(io, x), filename, "w")
+write(filename::AbstractString, x; kw...) = open(io -> write(io, x; kw...), filename, "w")
 
 function write(io::IO, x; indent = "   ")
     nodetype = XML.nodetype(x)
@@ -557,11 +647,11 @@ function write(io::IO, x; indent = "   ")
     padding = indent ^ max(0, depth - 1)
     print(io, padding)
     if nodetype === TEXT
-        print(io, unescape(value))
+        print(io, escape(value))
     elseif nodetype === ELEMENT
         print(io, '<', tag)
         _print_attrs(io, x)
-        print(io, isnothing(children) ? '/' : "", '>')
+        print(io, isempty(children) ? '/' : "", '>')
         if !isempty(children)
             if length(children) == 1 && XML.nodetype(only(children)) === TEXT
                 write(io, only(children); indent="")
@@ -579,6 +669,10 @@ function write(io::IO, x; indent = "   ")
         print(io, "<!DOCTYPE", value, '>')
     elseif nodetype === DECLARATION
         print(io, "<?xml")
+        _print_attrs(io, x)
+        print(io, "?>")
+    elseif nodetype === PROCESSING_INSTRUCTION
+        print(io, "<?", tag)
         _print_attrs(io, x)
         print(io, "?>")
     elseif nodetype === COMMENT

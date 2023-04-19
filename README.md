@@ -4,66 +4,132 @@
 
 <br><br>
 
+## Introduction
+
+**XML.jl** offers both *lazy* and *eager* data structures for reading and writing XML files with a consistent interface:
+
+- For `XML.RawData`, `XML.RowNode`, and `XML.Node`:
+    - `nodetype(node) --> XML.NodeType` (See `?XML.NodeType` for details).
+    - `tag(node) --> String or Nothing`
+    - `attributes(node) --> OrderedDict{String,String} or Nothing`
+    - `value(node) --> String or Nothing`
+    - `children(node) --> Vector{typeof(node)}`
+    - `depth(node) --> Int`
+- For `XML.RawData` and `XML.RowNode` only:
+    - `next(node) --> typeof(node)`
+    - `prev(node) --> typeof(node)`
+    - `parent(node) --> typeof(node)`
+
 ## Quickstart
 
 ```julia
 using XML
 
-doc = XML.Document(joinpath(dirname(pathof(XML)), "..", "test", "books.xml"))
+filename = joinpath(dirname(pathof(XML)), "..", "test", "books.xml")
 
-doc.prolog
- # <?xml version="1.0"?>
+doc = XML.Node(filename)
 
-doc.root
-# <catalog> (12 children)
+children(doc)
+# 2-element Vector{Node}:
+#  Node DECLARATION <?xml version="1.0">
+#  Node ELEMENT <catalog> (12 children)
 
-# Use getindex/setindex! to get/set an Element's children
-doc.root[1]
-# <book id="bk101"> (6 children)
+doc[end]  # The root node
+# Node ELEMENT <catalog> (12 children)
 
-doc.root[1][1]
-# <author> (1 child)
-
-# use getproperty/setproperty! to get/set an Element's attributes
-
-doc.root.id = "A new attribute called `id`"
-
-write("newfile.xml", doc)
+doc[end][2]  # Second child of root
+# Node ELEMENT <book id="bk102"> (6 children)
 ```
 
-### Types
+## Data Structures
+
+**`XML.Node`**
+- An eager data structure that loads the entire XML DOM in memory.
+- **This is what you should use to build an XML document programmatically.**
+- `Node`s have some additional methods that aid in construction/mutation:
 
 ```julia
-# <!DOCTYPE $text>
-struct DTD <: AbstractXMLNode
-    text::String
-end
+# Add a child:
+push!(parent::Node, child::Node)
 
-# <?xml $attributes ?>
-mutable struct Declaration <: AbstractXMLNode
-    tag::String
-    attributes::OrderedDict{Symbol, String}
-end
+# Replace a child:
+parent[2] = child
 
-# <![CDATA[$text]]>
-mutable struct CData <: AbstractXMLNode
-    text::String
-end
+# Create a new node with an edited field.  `kw...` can be one or more of:
+# - nodetype::NodeType
+# - tag (String or Nothing)
+# - attributes (OrderedDict{String,String} or Nothing)
+# - value (String or Nothing)
+# - children (Vector{Node} or nothing),
+# - depth::Int (this will be automatically set if not provided)
+Node(node; kw...)
+```
 
-# <!-- $text -->
-mutable struct Comment <: AbstractXMLNode
-    text::String
-end
+**`XML.RowNode`**
+- A data structure that can used as a *Tables.jl* source.  It is only lazy in how it access its children.
 
-# <$tag $attributes>$children</$tag>
-mutable struct Element <: AbstractXMLNode
-    tag::String
-    attributes::OrderedDict{Symbol, String}
-    children::Vector{Union{CData, Comment, Element, String}}
-end
 
-mutable struct Document <: AbstractXMLNode
-    prolog::Vector{Union{Comment, Declaration, DTD}}
-    root::Element
-end
+**`XML.RawData`**
+- A super lazy data structure that holds the reference `Vector{UInt8}` data and the sta
+
+## Reading
+
+```julia
+XML.RawData(filename)
+
+RowNode(filename)
+
+Node(filename)
+
+# Parsing:
+parse(XML.RawData, str)
+parse(RowNode, str)
+parse(Node, str)
+```
+
+## Writing
+
+```julia
+XML.write(filename::String, node)  # write to file
+
+XML.write(io::IO, node)  # write to stream
+
+XML.write(node)  # String
+```
+
+## Iteration
+
+```julia
+doc = XML.RowNode(filename)
+
+foreach(println, doc)
+# RowNode DECLARATION <?xml version="1.0">
+# RowNode ELEMENT <catalog> (12 children)
+# RowNode ELEMENT <book id="bk101"> (6 children)
+# RowNode ELEMENT <author> (1 child)
+# RowNode TEXT "Gambardella, Matthew"
+# RowNode ELEMENT <title> (1 child)
+# ⋮
+
+# Use as Tables.jl source:
+using DataFrames
+
+DataFrame(doc)
+```
+
+Note that you can also iterate through `XML.RawData`.  However, *BEWARE* that this iterator
+has some non-node elements (e.g. just the closing tag of an element).
+
+```julia
+data = XML.RawData(filename)
+
+foreach(println, data)
+# 1: RAW_DECLARATION (pos=1, len=20): <?xml version="1.0"?>
+# 1: RAW_ELEMENT_OPEN (pos=23, len=8): <catalog>
+# 2: RAW_ELEMENT_OPEN (pos=36, len=16): <book id="bk101">
+# 3: RAW_ELEMENT_OPEN (pos=60, len=7): <author>
+# 4: RAW_TEXT (pos=68, len=19): Gambardella, Matthew
+# 3: RAW_ELEMENT_CLOSE (pos=88, len=8): </author>  <------ !!! NOT A NODE !!!
+# 3: RAW_ELEMENT_OPEN (pos=104, len=6): <title>
+# ⋮
 ```
