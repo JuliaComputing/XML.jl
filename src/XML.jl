@@ -28,15 +28,15 @@ unescape(x::AbstractString) = replace(x, reverse.(escape_chars)...)
 #-----------------------------------------------------------------------------# RawDataType
 """
     RawDataType:
-    RAW_TEXT                    # text
-    RAW_COMMENT                 # <!-- ... -->
-    RAW_CDATA                   # <![CDATA[...]]>
-    RAW_DECLARATION             # <?xml attributes... ?>
-    RAW_DTD                     # <!DOCTYPE ...>
-    RAW_ELEMENT_OPEN            # <NAME attributes... >
-    RAW_ELEMENT_CLOSE           # </NAME>
-    RAW_ELEMENT_SELF_CLOSED     # <NAME attributes... />
-    RAW_DOCUMENT                # Something to initilize with (not really used)
+    - RAW_TEXT                    # text
+    - RAW_COMMENT                 # <!-- ... -->
+    - RAW_CDATA                   # <![CDATA[...]]>
+    - RAW_DECLARATION             # <?xml attributes... ?>
+    - RAW_DTD                     # <!DOCTYPE ...>
+    - RAW_ELEMENT_OPEN            # <NAME attributes... >
+    - RAW_ELEMENT_CLOSE           # </NAME>
+    - RAW_ELEMENT_SELF_CLOSED     # <NAME attributes... />
+    - RAW_DOCUMENT                # Something to initilize with (not really used)
 """
 @enum(RawDataType, RAW_DOCUMENT, RAW_TEXT, RAW_COMMENT, RAW_CDATA, RAW_DECLARATION, RAW_DTD,
     RAW_ELEMENT_OPEN, RAW_ELEMENT_CLOSE, RAW_ELEMENT_SELF_CLOSED)
@@ -75,6 +75,7 @@ Useful functions:
     - prev(o::RawData) --> RawData of the previous chunk (or `nothing`).
     - tag(o::RawData) --> String of the tag name (or `nothing`).
     - attributes(o::RawData) --> OrderedDict{String, String} of the attributes (or `nothing`).
+    - value(o::RawData) --> String of the value (or `nothing`).
     - children(o::RawData) --> Vector{RawData} of the children (or `nothing`).
     - parent(o::RawData) --> RawData of the parent (or `nothing`)
 """
@@ -85,10 +86,11 @@ struct RawData
     len::Int
     data::Vector{UInt8}
 end
-function RawData(filename::String)
-    data = Mmap.mmap(filename)
-    RawData(RAW_DOCUMENT, 0, 0, 0, data)
-end
+RawData(data::Vector{UInt8}) = RawData(RAW_DOCUMENT, 0, 0, 0, data)
+RawData(filename::String) = RawData(Mmap.mmap(filename))
+
+parse(x::AbstractString) = RawData(Vector{UInt8}(x))
+
 function Base.show(io::IO, o::RawData)
     print(io, o.depth, ": ", o.type, " (pos=", o.pos, ", len=", o.len, ")")
     o.len > 0 && printstyled(io, ": ", String(o.data[o.pos:o.pos + o.len]); color=:light_green)
@@ -109,6 +111,8 @@ function Base.iterate(o::RawData, state=o)
     return isnothing(n) ? nothing : (n, n)
 end
 
+is_node(o::RawData) = o.type !== RAW_ELEMENT_CLOSE
+nodes(o::RawData) = Iterators.Filter(is_node, o)
 
 #-----------------------------------------------------------------------------# get_name
 # find the start/stop of a name given a starting position `i`
@@ -116,10 +120,10 @@ _name_start(data, i) = findnext(x -> isletter(Char(x)) || Char(x) === '_', data,
 is_name_char(x) = (c = Char(x); isletter(c) || isdigit(c) || c ∈ "._-:")
 function _name_stop(data, i)
     i = findnext(!is_name_char, data, i)
-    isnothing(i) ? nothing : i
+    isnothing(i) ? length(data) : i
 end
 
-# start at position i, return name and position after name
+# starting at position i, return name and position after name
 function get_name(data, i)
     i = _name_start(data, i)
     j = _name_stop(data, i)
@@ -128,20 +132,21 @@ function get_name(data, i)
 end
 
 #-----------------------------------------------------------------------------# get_attributes
-function get_attributes(data)
+# starting at position i, return attributes up until the next '>' or '?' (DTD)
+function get_attributes(data, i)
+    j = findnext(x -> x == UInt8('>') || x == UInt8('?'), data, i)
+    i = _name_start(data, i)
+    i > j && return nothing
     out = OrderedDict{String, String}()
-    i = 1
-    while !isnothing(i)
-        # get key
+    while !isnothing(i) && i < j
         key, i = get_name(data, i)
         # get quotechar the value is wrapped in (either ' or ")
         i = findnext(x -> Char(x) === '"' || Char(x) === ''', data, i)
         quotechar = data[i]
-        j = findnext(==(quotechar), data, i + 1)
-        # get value and set it
-        value = String(data[i+1:j-1])
+        i2 = findnext(==(quotechar), data, i + 1)
+        value = String(data[i+1:i2-1])
         out[key] = value
-        i = _name_start(data, j + 1)
+        i = _name_start(data, i2)
     end
     return out
 end
@@ -156,10 +161,12 @@ end
 
 function attributes(o::RawData)
     if o.type === RAW_ELEMENT_OPEN || o.type === RAW_ELEMENT_SELF_CLOSED
-        _, i = get_name(o.data, o.pos + 1)
+        i = o.pos
+        i = _name_start(o.data, i)
+        i = _name_stop(o.data, i)
         get_attributes(o.data, i)
     elseif o.type === RAW_DECLARATION
-        get_attributes(@view(o.data[o.pos + 6:o.pos + o.len - 1]))
+        get_attributes(o.data, o.pos + 6)
     else
         nothing
     end
@@ -202,7 +209,13 @@ function parent(o::RawData)
     return p
 end
 
+nodetype(o::RawData) = nodetype(o.type)
 
+# sometimes I'd rather use e.g. `nodetype = _nodetype(o)`
+_nodetype = nodetype
+_tag = tag
+_attributes = attributes
+_value = value
 
 #-----------------------------------------------------------------------------# next RawData
 notspace(x::UInt8) = !isspace(Char(x))
@@ -220,12 +233,12 @@ function next(o::RawData)
     if c !== '<'
         type = RAW_TEXT
         j = findnext(==(UInt8('<')), data, i) - 1
+        j = findprev(notspace, data, j)   # "rstrip"
     elseif c === '<'
         c2 = Char(o.data[i + 1])
         if c2 === '!'
             c3 = Char(o.data[i + 2])
             if c3 === '-'
-                i += 1
                 type = RAW_COMMENT
                 j = findnext(Vector{UInt8}("-->"), data, i)[end]
             elseif c3 === '['
@@ -268,6 +281,7 @@ function prev(o::RawData)
     if c !== '>' # text
         type = RAW_TEXT
         i = findprev(==(UInt8('>')), data, j) + 1
+        i = findnext(notspace, data, i)  # "lstrip"
     elseif c === '>'
         c2 = Char(o.data[j - 1])
         if c2 === '-'
@@ -305,10 +319,10 @@ end
 
 
 #-----------------------------------------------------------------------------# Lazy
-# struct LazyNode
-#     data::RawData
-# end
-# LazyNode(filename::AbstractString) = LazyNode(RawData(filename))
+struct LazyNode
+    data::RawData
+end
+LazyNode(filename::AbstractString) = LazyNode(RawData(filename))
 
 
 
@@ -349,41 +363,49 @@ end
 
 
 #-----------------------------------------------------------------------------# RowNode
-# struct RowNode
-#     nodetype::NodeType
-#     tag::Union{String, Nothing}
-#     attributes::Union{OrderedDict{String, String}, Nothing}
-#     value::Union{String, Nothing}
-#     depth::Int
-# end
+struct RowNode
+    nodetype::NodeType
+    tag::Union{String, Nothing}
+    attributes::Union{OrderedDict{String, String}, Nothing}
+    value::Union{String, Nothing}
+    data::Union{RawData, Nothing}
+end
+function RowNode(data::RawData)
+    nodetype = _nodetype(data.type)
+    tag = _tag(data)
+    attributes = _attributes(data)
+    value = _value(data)
+    RowNode(nodetype, tag, attributes, value, data)
+end
+
 # function RowNode(t::RawData)
 #     (; type, pos, len, depth) = t
-#     pos === 0 && return RowNode(DOCUMENT_NODE, nothing, nothing, nothing, 0)
+#     pos === 0 && return RowNode(DOCUMENT, nothing, nothing, nothing, 0)
 #     data = view(t.data, pos:pos+len)
 #     @views if type === RAW_TEXT  # text
-#         return RowNode(TEXT_NODE, nothing, nothing, unescape(String(data), depth))
+#         return RowNode(TEXT, nothing, nothing, unescape(String(data), data))
 #     elseif type === RAW_COMMENT  # <!-- ... -->
-#         return RowNode(COMMENT_NODE, nothing, nothing, String(data[4:end-3]), depth)
+#         return RowNode(COMMENT, nothing, nothing, String(data[4:end-3]), data)
 #     elseif type === RAW_CDATA  # <![CDATA[...]]>
-#         return RowNode(CDATA_NODE, nothing, nothing, String(data[10:end-3]), depth)
+#         return RowNode(CDATA, nothing, nothing, String(data[10:end-3]), data)
 #     elseif type === RAW_DECLARATION  # <?xml attributes... ?>
 #         rng = 7:length(data) - 2
 #         attributes = get_attributes(data[rng])
-#         return RowNode(DECLARATION_NODE, nothing, attributes, nothing, depth)
+#         return RowNode(DECLARATION, nothing, attributes, nothing, data)
 #     elseif  type === RAW_DTD  # <!DOCTYPE ...>
-#         return RowNode(DTD_NODE, nothing, nothing, String(data[10:end-1]), depth)
+#         return RowNode(DTD, nothing, nothing, String(data[10:end-1]), data)
 #     elseif type === RAW_ELEMENT_OPEN  # <NAME attributes... >
 #         tag, i = get_name(data, 2)
 #         i = findnext(x -> isletter(Char(x)) || x === UInt8('_'), data, i)
 #         attributes = isnothing(i) ? nothing : get_attributes(data[i:end-1])
-#         return RowNode(ELEMENT_NODE, tag, attributes, nothing, depth)
+#         return RowNode(ELEMENT, tag, attributes, nothing, data)
 #     elseif type === RAW_ELEMENT_CLOSE  # </NAME>
 #         return nothing
 #     elseif  type === RAW_ELEMENT_SELF_CLOSED  # <NAME attributes... />
 #         tag, i = get_name(data, 2)
 #         i = findnext(x -> isletter(Char(x)) || x === UInt8('_'), data, i)
 #         attributes = isnothing(i) ? nothing : get_attributes(data[i:end-2])
-#         return RowNode(ELEMENT_NODE, tag, attributes, nothing, depth)
+#         return RowNode(ELEMENT, tag, attributes, nothing, data)
 #     else
 #         error("Unhandled token: $tok.")
 #     end
@@ -469,48 +491,48 @@ end
 # end
 
 
-# #-----------------------------------------------------------------------------# Node
-# Base.@kwdef struct Node
-#     nodetype::NodeType
-#     tag::Union{Nothing, String} = nothing
-#     attributes::Union{Nothing, OrderedDict{String, String}} = nothing
-#     value::Union{Nothing, String} = nothing
-#     children::Union{Nothing, Vector{Node}} = nothing
-#     depth::Int = 0
-# end
-# function Node((;nodetype, tag, attributes, value, children, depth)::Node; kw...)
-#     Node(; nodetype, tag, attributes, value, children, depth, kw...)
-# end
-# function (o::Node)(children...)
-#     isempty(children) && return o
-#     out = sizehint!(Node[], length(children))
-#     foreach(children) do x
-#         if x isa Node
-#             push!(out, Node(x; depth=o.depth + 1))
-#         else
-#             push!(out, Node(nodetype=TEXT_NODE, value=string(x), depth=o.depth + 1))
-#         end
-#     end
+#-----------------------------------------------------------------------------# Node
+Base.@kwdef struct Node
+    nodetype::NodeType
+    tag::Union{Nothing, String} = nothing
+    attributes::Union{Nothing, OrderedDict{String, String}} = nothing
+    value::Union{Nothing, String} = nothing
+    children::Union{Nothing, Vector{Node}} = nothing
+    depth::Int = 0
+end
+function Node((;nodetype, tag, attributes, value, children, depth)::Node; kw...)
+    Node(; nodetype, tag, attributes, value, children, depth, kw...)
+end
+function (o::Node)(children...)
+    isempty(children) && return o
+    out = sizehint!(Node[], length(children))
+    foreach(children) do x
+        if x isa Node
+            push!(out, Node(x; depth=o.depth + 1))
+        else
+            push!(out, Node(nodetype=TEXT_NODE, value=string(x), depth=o.depth + 1))
+        end
+    end
 
-#     Node(o; children=out)
-# end
+    Node(o; children=out)
+end
 
 # function Node((; depth, nodetype, tag, attributes, value)::RowNode)
 #     Node(; depth, nodetype, tag, attributes, value)
 # end
 # Node(o::TokenData) = Node(RowNode(o))
 
-# function Base.:(==)(a::Node, b::Node)
-#     a.nodetype == b.nodetype &&
-#     a.tag == b.tag &&
-#     a.attributes == b.attributes &&
-#     a.value == b.value && (
-#         (isnothing(a.children) && isnothing(b.children)) ||
-#         (isnothing(a.children) && isempty(b.children)) ||
-#         (isempty(a.children) && isnothing(b.children)) ||
-#         all(ai == bi for (ai,bi) in zip(a.children, b.children))
-#     )
-# end
+function Base.:(==)(a::Node, b::Node)
+    a.nodetype == b.nodetype &&
+    a.tag == b.tag &&
+    a.attributes == b.attributes &&
+    a.value == b.value && (
+        (isnothing(a.children) && isnothing(b.children)) ||
+        (isnothing(a.children) && isempty(b.children)) ||
+        (isempty(a.children) && isnothing(b.children)) ||
+        all(ai == bi for (ai,bi) in zip(a.children, b.children))
+    )
+end
 
 # # function element(nodetype::NodeType, tag = nothing; attributes...)
 # #     attributes = isempty(attributes) ?
@@ -519,15 +541,15 @@ end
 # #     Node(; nodetype, tag, attributes)
 # # end
 
-# Base.getindex(o::Node, i::Integer) = o.children[i]
-# Base.setindex!(o::Node, val, i::Integer) = o.children[i] = Node(val)
-# Base.lastindex(o::Node) = lastindex(o.children)
+Base.getindex(o::Node, i::Integer) = o.children[i]
+Base.setindex!(o::Node, val, i::Integer) = o.children[i] = Node(val)
+Base.lastindex(o::Node) = lastindex(o.children)
 
-# Base.push!(a::Node, b::Node) = push!(a.children, b)
+Base.push!(a::Node, b::Node) = push!(a.children, b)
 
-# AbstractTrees.children(o::Node) = isnothing(o.children) ? [] : o.children
+AbstractTrees.children(o::Node) = isnothing(o.children) ? [] : o.children
 
-# Base.show(io::IO, o::Node) = _show_node(io, o)
+Base.show(io::IO, o::Node) = _show_node(io, o)
 
 # #-----------------------------------------------------------------------------# read
 # read(filename::AbstractString) = Node(Tokens(filename))

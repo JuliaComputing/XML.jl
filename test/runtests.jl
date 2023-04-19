@@ -2,11 +2,51 @@ using XML
 using Downloads: download
 using Test
 using AbstractTrees
+using OrderedCollections
 
+#-----------------------------------------------------------------------------# RawData
+@testset "RawData tag/attributes/value" begin
+    examples = [
+        (xml = "<!DOCTYPE html>",
+            nodetype = XML.DTD,
+            tag=nothing,
+            attributes=nothing,
+            value=nothing),
 
+        (xml = "<?xml version=\"1.0\" key=\"value\"?>",
+            nodetype = XML.DECLARATION,
+            tag=nothing,
+            attributes=OrderedDict("version" => "1.0", "key" => "value"),
+            value=nothing),
 
-#-----------------------------------------------------------------------------# Tokens
-@testset "RawData" begin
+        (xml = "<tag _id=\"1\", x=\"abc\" />",
+            nodetype = XML.ELEMENT,
+            tag="tag",
+            attributes=OrderedDict("_id" => "1", "x" => "abc"),
+            value=nothing),
+        (xml = "<!-- comment -->",
+            nodetype = XML.COMMENT,
+            tag=nothing,
+            attributes=nothing,
+            value=" comment "),
+
+        (xml = "<![CDATA[cdata test]]>",
+            nodetype = XML.CDATA,
+            tag=nothing,
+            attributes=nothing,
+            value="cdata test"),
+    ]
+    for x in examples
+        @info "Testing: $(x.xml)"
+        data = XML.next(XML.parse(x.xml))
+        @test XML.nodetype(data) == x.nodetype
+        @test XML.tag(data) == x.tag
+        @test XML.attributes(data) == x.attributes
+        @test XML.value(data) == x.value
+    end
+end
+
+@testset "RawData with books.xml" begin
     file = "books.xml"
     data = XML.RawData(file)
     doc = collect(data)
@@ -44,6 +84,33 @@ using AbstractTrees
         for (a,b) in zip(next_res, prev_res)
             @test a == b
         end
+    end
+
+    @testset "tag/attributes/value" begin
+        x = doc[1]  # <?xml version="1.0"?>
+        @test XML.tag(x) === nothing
+        @test XML.attributes(x) == OrderedDict("version" => "1.0")
+        @test XML.value(x) === nothing
+
+        x = XML.next(x)  # <catalog>
+        @test XML.tag(x) == "catalog"
+        @test XML.attributes(x) === nothing
+        @test XML.value(x) === nothing
+
+        x = XML.next(x)  # <book id="bk101">
+        @test XML.tag(x) == "book"
+        @test XML.attributes(x) == OrderedDict("id" => "bk101")
+        @test XML.value(x) === nothing
+
+        x = XML.next(x)  # <author>
+        @test XML.tag(x) == "author"
+        @test XML.attributes(x) === nothing
+        @test XML.value(x) === nothing
+
+        x = XML.next(x)  # Gambardella, Matthew
+        @test XML.tag(x) === nothing
+        @test XML.attributes(x) === nothing
+        @test XML.value(x) == "Gambardella, Matthew"
     end
 end
 
