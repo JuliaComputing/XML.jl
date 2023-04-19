@@ -6,19 +6,21 @@
 
 ## Introduction
 
-**XML.jl** offers both *lazy* and *eager* data structures for reading and writing XML files with a consistent interface:
+This package offers fast data structures for reading and writing XML files with a consistent interface:
 
-- For `XML.RawData`, `XML.RowNode`, and `XML.Node`:
-    - `nodetype(node) --> XML.NodeType` (See `?XML.NodeType` for details).
-    - `tag(node) --> String or Nothing`
-    - `attributes(node) --> OrderedDict{String,String} or Nothing`
-    - `value(node) --> String or Nothing`
-    - `children(node) --> Vector{typeof(node)}`
-    - `depth(node) --> Int`
-- For `XML.RawData` and `XML.RowNode` only:
-    - `next(node) --> typeof(node)`
-    - `prev(node) --> typeof(node)`
-    - `parent(node) --> typeof(node)`
+#### Interface Core:
+
+- `nodetype(node) --> XML.NodeType` (See `?XML.NodeType` for details).
+- `tag(node) --> String or Nothing`
+- `attributes(node) --> OrderedDict{String,String} or Nothing`
+- `value(node) --> String or Nothing`
+- `children(node) --> Vector{typeof(node)}`
+- `depth(node) --> Int`
+
+#### Interface for Lazy Data Structures:
+- `next(node) --> typeof(node)`
+- `prev(node) --> typeof(node)`
+- `parent(node) --> typeof(node)`
 
 ## Quickstart
 
