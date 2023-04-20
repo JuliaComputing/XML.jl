@@ -7,6 +7,7 @@ using BenchmarkTools
 file = download("http://schemas.opengis.net/kml/2.2.0/ogckml22.xsd")
 
 #-----------------------------------------------------------------------------# Read
+@info "XML.Raw" @benchmark XML.Raw($file)
 @info "XML.FastNode" @benchmark XML.FastNode($file)
 @info "XML.Node" @benchmark Node($file)
 @info "XML.RowNode" @benchmark XML.RowNode($file)

@@ -1,7 +1,6 @@
 module XML
 
 using Mmap
-using Tables
 
 export Node, RowNode, Children,
     children, parent, nodetype, tag, attributes, value, depth, next, prev
@@ -26,9 +25,9 @@ unescape(x::AbstractString) = replace(x, reverse.(escape_chars)...)
 """
 @enum(NodeType, DOCUMENT, DTD, DECLARATION, PROCESSING_INSTRUCTION, COMMENT, CDATA, ELEMENT, TEXT)
 
-#-----------------------------------------------------------------------------# RawDataType
+#-----------------------------------------------------------------------------# RawType
 """
-    RawDataType:
+    RawType:
     - RAW_TEXT                    # text
     - RAW_COMMENT                 # <!-- ... -->
     - RAW_CDATA                   # <![CDATA[...]]>
@@ -40,10 +39,10 @@ unescape(x::AbstractString) = replace(x, reverse.(escape_chars)...)
     - RAW_ELEMENT_SELF_CLOSED     # <NAME attributes... />
     - RAW_DOCUMENT                # Something to initilize with (not really used)
 """
-@enum(RawDataType, RAW_DOCUMENT, RAW_TEXT, RAW_COMMENT, RAW_CDATA, RAW_PROCESSING_INSTRUCTION,
+@enum(RawType, RAW_DOCUMENT, RAW_TEXT, RAW_COMMENT, RAW_CDATA, RAW_PROCESSING_INSTRUCTION,
     RAW_DECLARATION, RAW_DTD, RAW_ELEMENT_OPEN, RAW_ELEMENT_CLOSE, RAW_ELEMENT_SELF_CLOSED)
 
-@inline nodetype(x::RawDataType) =
+@inline nodetype(x::RawType) =
     x === RAW_ELEMENT_OPEN              ? ELEMENT :
     x === RAW_ELEMENT_CLOSE             ? ELEMENT :
     x === RAW_ELEMENT_SELF_CLOSED       ? ELEMENT :
@@ -56,9 +55,9 @@ unescape(x::AbstractString) = replace(x, reverse.(escape_chars)...)
     x === RAW_DOCUMENT                  ? DOCUMENT :
     nothing
 
-#-----------------------------------------------------------------------------# RawData
+#-----------------------------------------------------------------------------# Raw
 """
-    RawData(filename::String)
+    Raw(filename::String)
 
 Create an iterator over raw chunks of data in an XML file.  Each chunk of data represents one of:
 
@@ -75,56 +74,53 @@ Create an iterator over raw chunks of data in an XML file.  Each chunk of data r
 
 Useful functions:
 
-    - view(o::RawData) --> view of the Vector{UInt8} chunk.
-    - String(o::RawData) --> String of the chunk.
-    - next(o::RawData) --> RawData of the next chunk (or `nothing`).
-    - prev(o::RawData) --> RawData of the previous chunk (or `nothing`).
-    - tag(o::RawData) --> String of the tag name (or `nothing`).
-    - attributes(o::RawData) --> Dict{String, String} of the attributes (or `nothing`).
-    - value(o::RawData) --> String of the value (or `nothing`).
-    - children(o::RawData) --> Vector{RawData} of the children (or `nothing`).
-    - parent(o::RawData) --> RawData of the parent (or `nothing`)
-    - depth(o::RawData) --> Int of the depth of the node in the XML DOM.
+    - view(o::Raw) --> view of the Vector{UInt8} chunk.
+    - String(o::Raw) --> String of the chunk.
+    - next(o::Raw) --> Raw of the next chunk (or `nothing`).
+    - prev(o::Raw) --> Raw of the previous chunk (or `nothing`).
+    - tag(o::Raw) --> String of the tag name (or `nothing`).
+    - attributes(o::Raw) --> Dict{String, String} of the attributes (or `nothing`).
+    - value(o::Raw) --> String of the value (or `nothing`).
+    - children(o::Raw) --> Vector{Raw} of the children (or `nothing`).
+    - parent(o::Raw) --> Raw of the parent (or `nothing`)
+    - depth(o::Raw) --> Int of the depth of the node in the XML DOM.
 """
-struct RawData
-    type::RawDataType
+struct Raw
+    type::RawType
     depth::Int
     pos::Int
     len::Int
     data::Vector{UInt8}
 end
-RawData(data::Vector{UInt8}) = RawData(RAW_DOCUMENT, 0, 0, 0, data)
-RawData(filename::String) = RawData(Mmap.mmap(filename))
+Raw(data::Vector{UInt8}) = Raw(RAW_DOCUMENT, 0, 0, 0, data)
+Raw(filename::String) = Raw(Mmap.mmap(filename))
 
-parse(x::AbstractString, ::Type{RawData}) = RawData(Vector{UInt8}(x))
+parse(x::AbstractString, ::Type{Raw}) = Raw(Vector{UInt8}(x))
 
 # Mostly for debugging
-Base.peek(o::RawData, n::Int) = String(@view(o.data[o.pos + o.len + 1:min(end, o.pos + o.len + n + 1)]))
+Base.peek(o::Raw, n::Int) = String(@view(o.data[o.pos + o.len + 1:min(end, o.pos + o.len + n + 1)]))
 
-Tables.rows(o::RawData) = o
-Tables.schema(o::RawData) = Tables.Schema(fieldnames(RawData)[1:end-1], fieldtypes(RawData)[1:end-1])
-
-function Base.show(io::IO, o::RawData)
-    print(io, o.depth, ": ", o.type, " (pos=", o.pos, ", len=", o.len, ")")
-    o.len > 0 && printstyled(io, ": ", String(o.data[o.pos:o.pos + o.len]); color=:light_green)
+function Base.show(io::IO, o::Raw)
+    print(io, o.type, ':', o.depth, " (pos=", o.pos, ", len=", o.len, ")")
+    o.len > 0 && printstyled(io, ": ", String(o); color=:light_green)
 end
-function Base.:(==)(a::RawData, b::RawData)
+function Base.:(==)(a::Raw, b::Raw)
     a.type == b.type && a.depth == b.depth && a.pos == b.pos && a.len == b.len && a.data === b.data
 end
 
-Base.view(o::RawData) = view(o.data, o.pos:o.pos + o.len)
-String(o::RawData) = String(view(o))
+Base.view(o::Raw) = view(o.data, o.pos:o.pos + o.len)
+String(o::Raw) = String(view(o))
 
-Base.IteratorSize(::Type{RawData}) = Base.SizeUnknown()
-Base.eltype(::Type{RawData}) = RawData
+Base.IteratorSize(::Type{Raw}) = Base.SizeUnknown()
+Base.eltype(::Type{Raw}) = Raw
 
-function Base.iterate(o::RawData, state=o)
+function Base.iterate(o::Raw, state=o)
     n = next(state)
     return isnothing(n) ? nothing : (n, n)
 end
 
-is_node(o::RawData) = o.type !== RAW_ELEMENT_CLOSE
-nodes(o::RawData) = Iterators.Filter(is_node, o)
+is_node(o::Raw) = o.type !== RAW_ELEMENT_CLOSE
+xml_nodes(o::Raw) = Iterators.Filter(is_node, o)
 
 #-----------------------------------------------------------------------------# get_name
 is_name_start_char(x::UInt8) = x in UInt8('A'):UInt8('Z') || x in UInt8('a'):UInt8('z') || x == UInt8('_')
@@ -165,14 +161,14 @@ end
 
 Return the `XML.NodeType` of the node.
 """
-nodetype(o::RawData) = nodetype(o.type)
+nodetype(o::Raw) = nodetype(o.type)
 
 """
     tag(node) --> String or Nothing
 
 Return the tag name of `ELEMENT` and `PROCESESSING_INSTRUCTION` nodes.
 """
-function tag(o::RawData)
+function tag(o::Raw)
     o.type ∉ [RAW_ELEMENT_OPEN, RAW_ELEMENT_CLOSE, RAW_ELEMENT_SELF_CLOSED, RAW_PROCESSING_INSTRUCTION] && return nothing
     return get_name(o.data, o.pos + 1)[1]
 end
@@ -182,7 +178,7 @@ end
 
 Return the attributes of `ELEMENT`, `DECLARATION`, or `PROCESSING_INSTRUCTION` nodes.
 """
-function attributes(o::RawData)
+function attributes(o::Raw)
     if o.type === RAW_ELEMENT_OPEN || o.type === RAW_ELEMENT_SELF_CLOSED || o.type === RAW_PROCESSING_INSTRUCTION
         i = o.pos
         i = name_start(o.data, i)
@@ -200,7 +196,7 @@ end
 
 Return the value of `TEXT`, `CDATA`, `COMMENT`, or `DTD` nodes.
 """
-function value(o::RawData)
+function value(o::Raw)
     if o.type === RAW_TEXT
         unescape(String(o))
     elseif o.type === RAW_CDATA
@@ -219,19 +215,18 @@ end
 
 Return the children the node.  Will only be nonempty for `ELEMENT` and `DOCUMENT` nodes.
 """
-function children(o::RawData)
+function children(o::Raw)
     if o.type === RAW_ELEMENT_OPEN || o.type === RAW_DOCUMENT
         depth = o.depth
-        out = RawData[]
-        for item in o
-            item.type === RAW_ELEMENT_CLOSE && continue  # skip closing tags
+        out = Raw[]
+        for item in xml_nodes(o)
             item.depth == depth + 1 && push!(out, item)
             item.depth == depth && break
             o.type === RAW_DOCUMENT && item.depth == 2 && break # break if we've seen the doc root
         end
         out
     else
-        RawData[]
+        Raw[]
     end
 end
 
@@ -240,7 +235,7 @@ end
 
 Return the parent of the node.  Will be `nothing` for `DOCUMENT` nodes.  Not defined for `XML.Node`.
 """
-function parent(o::RawData)
+function parent(o::Raw)
     depth = o.depth
     depth === 1 && return nothing
     p = prev(o)
@@ -250,9 +245,8 @@ function parent(o::RawData)
     return p
 end
 
-depth(o::RawData) = o.depth
 
-#-----------------------------------------------------------------------------# next RawData
+#-----------------------------------------------------------------------------# next Raw
 isspace(x::UInt8) = Base.isspace(Char(x))
 
 """
@@ -261,7 +255,7 @@ isspace(x::UInt8) = Base.isspace(Char(x))
 Return the next node in the document during depth-first traversal.  Depth-first is the order you
 would visit nodes by reading top-down through an XML file.  Not defined for `XML.Node`.
 """
-function next(o::RawData)
+function next(o::Raw)
     i = o.pos + o.len + 1
     (; depth, data, type) = o
     i = findnext(!isspace, data, i)  # skip insignificant whitespace
@@ -309,21 +303,21 @@ function next(o::RawData)
             end
         end
     end
-    return RawData(type, depth, i, j - i, data)
+    return Raw(type, depth, i, j - i, data)
 end
 
-#-----------------------------------------------------------------------------# prev RawData
+#-----------------------------------------------------------------------------# prev Raw
 """
     prev(node) --> typeof(node), Nothing, or Missing (only for XML.Node)
 
 Return the previous node in the document during depth-first traversal.  Not defined for `XML.Node`.
 """
-function prev(o::RawData)
+function prev(o::Raw)
     (; depth, data, type) = o
     type === RAW_DOCUMENT && return nothing
     j = o.pos - 1
     j = findprev(!isspace, data, j)  # skip insignificant whitespace
-    isnothing(j) && return RawData(data)  # RAW_DOCUMENT
+    isnothing(j) && return Raw(data)  # RAW_DOCUMENT
     c = Char(o.data[j])
     i = j - 1
     next_type = type
@@ -367,87 +361,59 @@ function prev(o::RawData)
     elseif type == RAW_ELEMENT_OPEN && next_type !== RAW_ELEMENT_CLOSE
         depth -= 1
     end
-    return RawData(type, depth, i, j - i, data)
+    return Raw(type, depth, i, j - i, data)
 end
 
 
 #-----------------------------------------------------------------------------# RowNode
 """
     RowNode(file::AbstractString)
-    RowNode(data::XML.RawData)
+    RowNode(data::XML.Raw)
 
 An XML node that is lazy only in how it accesses its children (available via `children(::RowNode)`).
-`RowNode`s are tied to a `RawData` object; users should never mutate `RowNode` fields.
-
-`RowNode` also satisfies the `Tables.rowaccess` interface for loading an XML file as
-a tabular dataset, e.g.
-
-    using XML, DataFrames
-    df = DataFrame(RowNode("file.xml"))
+`RowNode`s are tied to a `Raw` object; users should never mutate `RowNode` fields.
 """
 struct RowNode
     nodetype::NodeType
     tag::Union{String, Nothing}
     attributes::Union{Dict{String, String}, Nothing}
     value::Union{String, Nothing}
-    data::RawData
+    raw::Raw
 end
-function RowNode(data::RawData)
-    nodetype = XML.nodetype(data.type)
-    tag = XML.tag(data)
-    attributes = XML.attributes(data)
-    value = XML.value(data)
-    RowNode(nodetype, tag, attributes, value, data)
+function RowNode(raw::Raw)
+    nodetype = XML.nodetype(raw.type)
+    tag = XML.tag(raw)
+    attributes = XML.attributes(raw)
+    value = XML.value(raw)
+    RowNode(nodetype, tag, attributes, value, raw)
 end
-RowNode(file::AbstractString) = RowNode(RawData(file))
+RowNode(file::AbstractString) = RowNode(Raw(file))
 
-parse(x::AbstractString, ::Type{RowNode}) = RowNode(parse(x, RawData))
+parse(x::AbstractString, ::Type{RowNode}) = RowNode(parse(x, Raw))
 
-function Base.getproperty(o::RowNode, x::Symbol)
-    x === :depth && return getfield(o, :data).depth
-    x === :nodetype && return getfield(o, :nodetype)
-    x === :tag && return getfield(o, :tag)
-    x === :attributes && return getfield(o, :attributes)
-    x === :value && return getfield(o, :value)
-    error("XML.RowNode does not have property: $x.")
-end
-
-Base.propertynames(o::RowNode) = (:depth, :nodetype, :tag, :attributes, :value)
-
-Tables.rows(o::RowNode) = o
-Tables.schema(o::RowNode) = Tables.Schema(
-    (:depth, :nodetype, :tag, :attributes, :value),
-    (Int, NodeType, Union{Nothing, String}, Union{Nothing, Dict{String, String}}, Union{Nothing, String}),
-)
-
-children(o::RowNode) = RowNode.(children(getfield(o, :data)))
-tag(o::RowNode) = o.tag
-attributes(o::RowNode) = o.attributes
-value(o::RowNode) = nodetype(o) === TEXT ? o.value : o.value
-nodetype(o::RowNode) = o.nodetype
-depth(o::RowNode) = o.depth
-parent(o::RowNode) = RowNode(parent(getfield(o, :data)))
+children(o::RowNode) = RowNode.(children(o.raw))
+parent(o::RowNode) = RowNode(parent(o.raw))
+depth(o::RowNode) = depth(o.raw)
 
 Base.show(io::IO, o::RowNode) = _show_node(io, o)
 
 Base.IteratorSize(::Type{RowNode}) = Base.SizeUnknown()
 Base.eltype(::Type{RowNode}) = RowNode
 
-function Base.iterate(o::RowNode, state = getfield(o, :data))
+
+function Base.iterate(o::RowNode, state=o)
     n = next(state)
-    isnothing(n) && return nothing
-    n.type === RAW_ELEMENT_CLOSE && return iterate(o, n)
-    return RowNode(n), n
+    return isnothing(n) ? nothing : (n, n)
 end
 
 function next(o::RowNode)
-    n = next(getfield(o, :data))
+    n = next(o.raw)
     isnothing(n) && return nothing
     n.type === RAW_ELEMENT_CLOSE && return next(RowNode(n))
     return RowNode(n)
 end
 function prev(o::RowNode)
-    n = prev(getfield(o, :data))
+    n = prev(o.raw)
     isnothing(n) && return nothing
     n.type === RAW_ELEMENT_CLOSE && return prev(RowNode(n))
     return RowNode(n)
@@ -463,7 +429,7 @@ struct FastNode
     depth::Int
 end
 FastNode(file::AbstractString) = FastNode(RowNode(file))
-FastNode(data::RawData) = FastNode(RowNode(data))
+FastNode(data::Raw) = FastNode(RowNode(data))
 
 Base.show(io::IO, o::FastNode) = _show_node(io, o)
 
@@ -490,11 +456,11 @@ Base.@kwdef struct Node
     depth::Int = -1
 end
 Node(nodetype; kw...) = Node(; nodetype, kw...)
-Node(file::AbstractString) = Node(RawData(file))
-Node(data::RawData) = Node(RowNode(data))
+Node(file::AbstractString) = Node(Raw(file))
+Node(data::Raw) = Node(RowNode(data))
 
 function Node(node::RowNode)
-    (;nodetype, tag, attributes, value, depth) = node
+    (;nodetype, tag, attributes, value, depth) = nodeinfo(node)
     c = XML.children(node)
     if isempty(c)
         return Node(; nodetype, tag, attributes, value, depth)
@@ -506,7 +472,7 @@ function Node(node::RowNode)
     end
 end
 
-parse(x::AbstractString, ::Type{Node} = Node) = Node(parse(x, RawData))
+parse(x::AbstractString, ::Type{Node} = Node) = Node(parse(x, Raw))
 
 function Node((;nodetype, tag, attributes, value, children, depth)::Node; kw...)
     depth = depth == -1 ? 1 : depth
@@ -617,45 +583,6 @@ element(tag, children::Vector{Node}; kw...) = element(tag, children...; kw...)
 # Base.getproperty(::typeof(element), tag::Symbol) = element(string(tag))
 end
 
-
-
-# #-----------------------------------------------------------------------------# Children
-# """
-#     Children(node)
-
-# Iterator over the children of a node.
-# """
-# struct Children{T}
-#     parent::T
-# end
-
-# Base.IteratorSize(::Type{Children{T}}) where {T} = Base.SizeUnknown()
-# Base.eltype(::Type{Children{T}}) where {T} = T
-
-# function Base.iterate(o::Children{RawData}, state=o.parent)
-#     (;type, depth) = o.parent
-#     type === RAW_ELEMENT_OPEN || type === RAW_DOCUMENT || return nothing
-#     n = iterate(state, state)
-#     isnothing(n) && return nothing
-#     _, state = n
-#     state.type === RAW_ELEMENT_CLOSE && return iterate(o, state)
-#     state.depth == depth + 1 && return (state, state)  # <-- only place we return a value
-#     state.depth == depth && return nothing
-#     type === RAW_DOCUMENT && state.depth == 2 && return nothing # early stop if we've seen the doc root already
-#     return iterate(o, state)
-# end
-
-# function Base.iterate(o::Children{RowNode}, state=getfield(o.parent, :data))
-#     n = iterate(Children(getfield(o.parent, :data)), state)
-#     isnothing(n) && return nothing
-#     item, state = n
-#     return RowNode(item), state
-# end
-
-
-
-
-
 #-----------------------------------------------------------------------------# !!! common !!!
 # Everything below here is common to all data structures
 
@@ -665,6 +592,8 @@ depth(o) = o.depth
 tag(o) = o.tag
 attributes(o) = o.attributes
 value(o) = o.value
+
+nodeinfo(o) = (; nodetype=nodetype(o), tag=tag(o), attributes=attributes(o), value=value(o), depth=depth(o))
 
 
 #-----------------------------------------------------------------------------# nodes_equal
@@ -682,14 +611,15 @@ end
 Base.parse(::Type{T}, str::AbstractString) where {T} = parse(str, T)
 
 #-----------------------------------------------------------------------------# indexing
-Base.getindex(o::Union{Node,RawData,RowNode}, i::Integer) = children(o)[i]
-Base.getindex(o::Union{Node,RawData,RowNode}, ::Colon) = children(o)
-Base.lastindex(o::Union{Node,RawData,RowNode}) = lastindex(children(o))
+Base.getindex(o::Union{Node,Raw,RowNode}, i::Integer) = children(o)[i]
+Base.getindex(o::Union{Node,Raw,RowNode}, ::Colon) = children(o)
+Base.lastindex(o::Union{Node,Raw,RowNode}) = lastindex(children(o))
 
-Base.only(o::Union{Node,RawData,RowNode}) = only(children(o))
+Base.only(o::Union{Node,Raw,RowNode}) = only(children(o))
 
 #-----------------------------------------------------------------------------# printing
 function _show_node(io::IO, o)
+    !ismissing(depth(o)) && print(io, depth(o), ':')
     printstyled(io, typeof(o), ' '; color=:light_black)
     printstyled(io, nodetype(o), ; color=:light_green)
     if o.nodetype === TEXT
@@ -698,7 +628,7 @@ function _show_node(io::IO, o)
         printstyled(io, " <", tag(o), color=:light_cyan)
         _print_attrs(io, o)
         printstyled(io, '>', color=:light_cyan)
-        _print_n_children(io, o)
+        # _print_n_children(io, o)
     elseif o.nodetype === DTD
         printstyled(io, " <!DOCTYPE "; color=:light_cyan)
         printstyled(io, value(o), color=:light_black)
@@ -720,10 +650,10 @@ function _show_node(io::IO, o)
         printstyled(io, value(o), color=:light_black)
         printstyled(io, "]]>", color=:light_cyan)
     elseif o.nodetype === DOCUMENT
-        _print_n_children(io, o)
+        # _print_n_children(io, o)
     elseif o.nodetype === UNKNOWN
         printstyled(io, "Unknown", color=:light_cyan)
-        _print_n_children(io, o)
+        # _print_n_children(io, o)
     else
         error("Unreachable reached")
     end

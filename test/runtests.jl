@@ -15,8 +15,8 @@ all_files = [
     "example.kml" => example_kml
 ]
 
-#-----------------------------------------------------------------------------# RawData
-@testset "RawData tag/attributes/value" begin
+#-----------------------------------------------------------------------------# Raw
+@testset "Raw tag/attributes/value" begin
     examples = [
         (xml = "<!DOCTYPE html>",
             nodetype = XML.DTD,
@@ -49,7 +49,7 @@ all_files = [
     ]
     for x in examples
         # @info "Testing: $(x.xml)"
-        data = XML.next(XML.parse(x.xml, XML.RawData))
+        data = XML.next(XML.parse(x.xml, XML.Raw))
         @test XML.nodetype(data) == x.nodetype
         @test XML.tag(data) == x.tag
         @test XML.attributes(data) == x.attributes
@@ -57,9 +57,9 @@ all_files = [
     end
 end
 
-@testset "RawData with books.xml" begin
+@testset "Raw with books.xml" begin
     file = "books.xml"
-    data = XML.RawData(file)
+    data = XML.Raw(file)
     doc = collect(data)
     @test length(doc) > countlines(file)
     # Check that the first 5 lines are correct
