@@ -1,9 +1,7 @@
 module XML
 
-using OrderedCollections: OrderedDict
 using Mmap
 using Tables
-import AbstractTrees: AbstractTrees, children, parent
 
 export Node, RowNode, Children,
     children, parent, nodetype, tag, attributes, value, depth, next, prev
@@ -82,7 +80,7 @@ Useful functions:
     - next(o::RawData) --> RawData of the next chunk (or `nothing`).
     - prev(o::RawData) --> RawData of the previous chunk (or `nothing`).
     - tag(o::RawData) --> String of the tag name (or `nothing`).
-    - attributes(o::RawData) --> OrderedDict{String, String} of the attributes (or `nothing`).
+    - attributes(o::RawData) --> Dict{String, String} of the attributes (or `nothing`).
     - value(o::RawData) --> String of the value (or `nothing`).
     - children(o::RawData) --> Vector{RawData} of the children (or `nothing`).
     - parent(o::RawData) --> RawData of the parent (or `nothing`)
@@ -99,6 +97,9 @@ RawData(data::Vector{UInt8}) = RawData(RAW_DOCUMENT, 0, 0, 0, data)
 RawData(filename::String) = RawData(Mmap.mmap(filename))
 
 parse(x::AbstractString, ::Type{RawData}) = RawData(Vector{UInt8}(x))
+
+# Mostly for debugging
+Base.peek(o::RawData, n::Int) = String(@view(o.data[o.pos + o.len + 1:min(end, o.pos + o.len + n + 1)]))
 
 Tables.rows(o::RawData) = o
 Tables.schema(o::RawData) = Tables.Schema(fieldnames(RawData)[1:end-1], fieldtypes(RawData)[1:end-1])
@@ -143,7 +144,7 @@ end
 function get_attributes(data, i, j)
     i = name_start(data, i)
     i > j && return nothing
-    out = OrderedDict{String, String}()
+    out = Dict{String, String}()
     while !isnothing(i) && i < j
         key, i = get_name(data, i)
         # get quotechar the value is wrapped in (either ' or ")
@@ -177,7 +178,7 @@ function tag(o::RawData)
 end
 
 """
-    attributes(node) --> OrderedDict{String, String} or Nothing
+    attributes(node) --> Dict{String, String} or Nothing
 
 Return the attributes of `ELEMENT`, `DECLARATION`, or `PROCESSING_INSTRUCTION` nodes.
 """
@@ -387,7 +388,7 @@ a tabular dataset, e.g.
 struct RowNode
     nodetype::NodeType
     tag::Union{String, Nothing}
-    attributes::Union{OrderedDict{String, String}, Nothing}
+    attributes::Union{Dict{String, String}, Nothing}
     value::Union{String, Nothing}
     data::RawData
 end
@@ -416,7 +417,7 @@ Base.propertynames(o::RowNode) = (:depth, :nodetype, :tag, :attributes, :value)
 Tables.rows(o::RowNode) = o
 Tables.schema(o::RowNode) = Tables.Schema(
     (:depth, :nodetype, :tag, :attributes, :value),
-    (Int, NodeType, Union{Nothing, String}, Union{Nothing, OrderedDict{String, String}}, Union{Nothing, String}),
+    (Int, NodeType, Union{Nothing, String}, Union{Nothing, Dict{String, String}}, Union{Nothing, String}),
 )
 
 children(o::RowNode) = RowNode.(children(getfield(o, :data)))
@@ -456,7 +457,7 @@ end
 struct FastNode
     nodetype::NodeType
     tag::Union{Nothing, String}
-    attributes::Union{Nothing, OrderedDict{String, String}}
+    attributes::Union{Nothing, Dict{String, String}}
     value::Union{Nothing, String}
     children::Union{Nothing, Vector{FastNode}}
     depth::Int
@@ -483,7 +484,7 @@ Base.lastindex(o::FastNode) = length(o.children)
 Base.@kwdef struct Node
     nodetype::NodeType
     tag::Union{Nothing, String} = nothing
-    attributes::Union{Nothing, OrderedDict{String, String}} = nothing
+    attributes::Union{Nothing, Dict{String, String}} = nothing
     value::Union{Nothing, String} = nothing
     children::Union{Nothing, Vector{Node}} = nothing
     depth::Int = -1
@@ -544,12 +545,12 @@ _node(x::Node; depth=x.depth) = Node(x; depth)
 
 module NodeConstructors
 import .._node
-import ..Node, ..OrderedDict
+import ..Node, ..Dict
 import ..TEXT, ..DOCUMENT, ..DTD, ..DECLARATION, ..PROCESSING_INSTRUCTION, ..COMMENT, ..CDATA, ..ELEMENT
 
 export document, dtd, declaration, processing_instruction, comment, cdata, text, element
 
-attrs(kw) = OrderedDict{String,String}(string(k) => string(v) for (k,v) in kw)
+attrs(kw) = Dict{String,String}(string(k) => string(v) for (k,v) in kw)
 
 """
     document(children::Vector{Node})
@@ -566,13 +567,13 @@ dtd(value::AbstractString) = Node(nodetype=DTD, value=String(value))
 """
     declaration(; attributes...)
 """
-declaration(attributes::OrderedDict{String,String}) = Node(;nodetype=DECLARATION, attributes)
+declaration(attributes::Dict{String,String}) = Node(;nodetype=DECLARATION, attributes)
 declaration(; kw...) = declaration(attrs(kw))
 
 """
     processing_instruction(tag::AbstractString; attributes...)
 """
-processing_instruction(tag, attributes::OrderedDict{String,String}) = Node(;nodetype=PROCESSING_INSTRUCTION, tag=string(tag), attributes)
+processing_instruction(tag, attributes::Dict{String,String}) = Node(;nodetype=PROCESSING_INSTRUCTION, tag=string(tag), attributes)
 processing_instruction(tag; kw...) = processing_instruction(tag, attrs(kw))
 
 """
@@ -786,7 +787,7 @@ function write(io::IO, x; indent = "   ")
     elseif nodetype === CDATA
         print(io, "<![CDATA[", value, "]]>")
     elseif nodetype === DOCUMENT
-        foreach(AbstractTrees.children(x)) do child
+        foreach(children) do child
             write(io, child; indent)
             println(io)
         end

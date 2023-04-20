@@ -1,7 +1,6 @@
 using XML
 using Downloads: download
 using Test
-using OrderedCollections
 
 #-----------------------------------------------------------------------------# files
 xml_spec = download("http://www.w3.org/2001/xml.xsd")
@@ -28,13 +27,13 @@ all_files = [
         (xml = "<?xml version=\"1.0\" key=\"value\"?>",
             nodetype = XML.DECLARATION,
             tag=nothing,
-            attributes=OrderedDict("version" => "1.0", "key" => "value"),
+            attributes=Dict("version" => "1.0", "key" => "value"),
             value=nothing),
 
         (xml = "<tag _id=\"1\", x=\"abc\" />",
             nodetype = XML.ELEMENT,
             tag="tag",
-            attributes=OrderedDict("_id" => "1", "x" => "abc"),
+            attributes=Dict("_id" => "1", "x" => "abc"),
             value=nothing),
         (xml = "<!-- comment -->",
             nodetype = XML.COMMENT,
@@ -102,7 +101,7 @@ end
     @testset "tag/attributes/value" begin
         x = doc[1]  # <?xml version="1.0"?>
         @test XML.tag(x) === nothing
-        @test XML.attributes(x) == OrderedDict("version" => "1.0")
+        @test XML.attributes(x) == Dict("version" => "1.0")
         @test XML.value(x) === nothing
 
         x = XML.next(x)  # <catalog>
@@ -112,7 +111,7 @@ end
 
         x = XML.next(x)  # <book id="bk101">
         @test XML.tag(x) == "book"
-        @test XML.attributes(x) == OrderedDict("id" => "bk101")
+        @test XML.attributes(x) == Dict("id" => "bk101")
         @test XML.value(x) === nothing
 
         x = XML.next(x)  # <author>
