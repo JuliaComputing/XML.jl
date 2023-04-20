@@ -126,28 +126,9 @@ is_node(o::RawData) = o.type !== RAW_ELEMENT_CLOSE
 nodes(o::RawData) = Iterators.Filter(is_node, o)
 
 #-----------------------------------------------------------------------------# get_name
-# # find the start/stop of a name given a starting position `i`
-# _name_start(data, i) = findnext(x -> isletter(Char(x)) || Char(x) === '_', data, i)
-# is_name_char(x) = (c = Char(x); isletter(c) || isdigit(c) || c ∈ "._-:")
-# function _name_stop(data, i)
-#     i = findnext(!is_name_char, data, i)
-#     isnothing(i) ? length(data) : i
-# end
-
-# # starting at position i, return name and position after name
-# function get_name(data, i)
-#     i = _name_start(data, i)
-#     j = _name_stop(data, i)
-#     @views name = String(data[i:j-1])
-#     return name, j
-# end
-
 is_name_start_char(x::UInt8) = x in UInt8('A'):UInt8('Z') || x in UInt8('a'):UInt8('z') || x == UInt8('_')
-
-# Character is letter, underscore, digit, hyphen, or period
 is_name_char(x::UInt8) = is_name_start_char(x) || x in UInt8('0'):UInt8('9') || x == UInt8('-') || x == UInt8('.')
 
-# find the start/stop of a name given a starting position `i`
 name_start(data, i) = findnext(is_name_start_char, data, i)
 name_stop(data, i) = findnext(!is_name_char, data, i) - 1
 
@@ -159,15 +140,14 @@ end
 
 #-----------------------------------------------------------------------------# get_attributes
 # starting at position i, return attributes up until the next '>' or '?' (DTD)
-function get_attributes(data, i)
-    j = findnext(x -> x == UInt8('>') || x == UInt8('?'), data, i)
+function get_attributes(data, i, j)
     i = name_start(data, i)
     i > j && return nothing
     out = OrderedDict{String, String}()
     while !isnothing(i) && i < j
         key, i = get_name(data, i)
         # get quotechar the value is wrapped in (either ' or ")
-        i = findnext(x -> Char(x) === '"' || Char(x) === ''', data, i + 1)
+        i = findnext(x -> x === UInt8('"') || x === UInt8('''), data, i + 1)
         quotechar = data[i]
         i2 = findnext(==(quotechar), data, i + 1)
         @views value = String(data[i+1:i2-1])
@@ -206,9 +186,9 @@ function attributes(o::RawData)
         i = o.pos
         i = name_start(o.data, i)
         i = name_stop(o.data, i)
-        get_attributes(o.data, i + 1)
+        get_attributes(o.data, i + 1, o.pos + o.len)
     elseif o.type === RAW_DECLARATION
-        get_attributes(o.data, o.pos + 6)
+        get_attributes(o.data, o.pos + 6, o.pos + o.len)
     else
         nothing
     end
