@@ -5,9 +5,9 @@ using BenchmarkTools
 
 
 file = download("http://schemas.opengis.net/kml/2.2.0/ogckml22.xsd")
-filename = tempname()
 
 #-----------------------------------------------------------------------------# Read
+@info "XML.FastNode" @benchmark XML.FastNode($file)
 @info "XML.Node" @benchmark Node($file)
 @info "XML.RowNode" @benchmark XML.RowNode($file)
 @info "EzXML.readxml" @benchmark EzXML.readxml($file)

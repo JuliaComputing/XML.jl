@@ -5,7 +5,7 @@ using Mmap
 using Tables
 import AbstractTrees: AbstractTrees, children, parent
 
-export Node, RowNode,
+export Node, RowNode, Children,
     children, parent, nodetype, tag, attributes, value, depth, next, prev
 
 #-----------------------------------------------------------------------------# escape/unescape
@@ -138,7 +138,7 @@ end
 function get_name(data, i)
     i = _name_start(data, i)
     j = _name_stop(data, i)
-    name = String(data[i:j-1])
+    @views name = String(data[i:j-1])
     return name, j
 end
 
@@ -155,12 +155,13 @@ function get_attributes(data, i)
         i = findnext(x -> Char(x) === '"' || Char(x) === ''', data, i)
         quotechar = data[i]
         i2 = findnext(==(quotechar), data, i + 1)
-        value = String(data[i+1:i2-1])
+        @views value = String(data[i+1:i2-1])
         out[key] = value
         i = _name_start(data, i2)
     end
     return out
 end
+
 
 #-----------------------------------------------------------------------------# interface
 """
@@ -290,9 +291,7 @@ function next(o::RawData)
                 j = findnext(Vector{UInt8}("]]>"), data, i)[end]
             elseif c3 === 'D'
                 type = RAW_DTD
-                j = findnext(x -> x == UInt8('>'), data, i)
-            else
-                error("Should be unreachable.  Unexpected typeen: $c$c2$c3")
+                j = findnext(==(UInt8('>')), data, i)
             end
         elseif c2 === '?'
             if get_name(data, i + 2)[1] == "xml"
@@ -458,6 +457,33 @@ function prev(o::RowNode)
     return RowNode(n)
 end
 
+#-----------------------------------------------------------------------------# FastNode
+struct FastNode
+    nodetype::NodeType
+    tag::Union{Nothing, String}
+    attributes::Union{Nothing, OrderedDict{String, String}}
+    value::Union{Nothing, String}
+    children::Union{Nothing, Vector{FastNode}}
+    depth::Int
+end
+FastNode(file::AbstractString) = FastNode(RowNode(file))
+FastNode(data::RawData) = FastNode(RowNode(data))
+
+Base.show(io::IO, o::FastNode) = _show_node(io, o)
+
+function FastNode(node::RowNode)
+    (;nodetype, tag, attributes, value, depth) = node
+    c = children(node)
+    FastNode(nodetype, tag, attributes, value, isempty(c) ? nothing : map(FastNode, c), depth)
+end
+
+children(o::FastNode) = o.children
+Base.getindex(o::FastNode, i::Integer) = o.children[i]
+Base.setindex!(o::FastNode, v, i::Integer) = (o.children[i] = v)
+Base.lastindex(o::FastNode) = length(o.children)
+
+
+
 #-----------------------------------------------------------------------------# Node
 Base.@kwdef struct Node
     nodetype::NodeType
@@ -472,15 +498,16 @@ Node(file::AbstractString) = Node(RawData(file))
 Node(data::RawData) = Node(RowNode(data))
 
 function Node(node::RowNode)
-    o = Node(node.nodetype, node.tag, node.attributes, node.value, nothing, node.depth)
-    children = XML.children(node)
-    if !isempty(children)
-        o = Node(o; children=Node[])
-        for child in children
-            push!(o, Node(child))
+    (;nodetype, tag, attributes, value, depth) = node
+    c = XML.children(node)
+    if isempty(c)
+        return Node(; nodetype, tag, attributes, value, depth)
+    else
+        children = map(c) do child
+            Node(child)
         end
+        return Node(; nodetype, tag, attributes, value, children, depth)
     end
-    return o
 end
 
 parse(x::AbstractString, ::Type{Node} = Node) = Node(parse(x, RawData))
@@ -496,7 +523,6 @@ function (o::Node)(children...)
     foreach(children) do x
         push!(out, _node(x; depth=o.depth + 1))
     end
-
     Node(o; children=out)
 end
 
@@ -597,11 +623,53 @@ end
 
 
 
+# #-----------------------------------------------------------------------------# Children
+# """
+#     Children(node)
+
+# Iterator over the children of a node.
+# """
+# struct Children{T}
+#     parent::T
+# end
+
+# Base.IteratorSize(::Type{Children{T}}) where {T} = Base.SizeUnknown()
+# Base.eltype(::Type{Children{T}}) where {T} = T
+
+# function Base.iterate(o::Children{RawData}, state=o.parent)
+#     (;type, depth) = o.parent
+#     type === RAW_ELEMENT_OPEN || type === RAW_DOCUMENT || return nothing
+#     n = iterate(state, state)
+#     isnothing(n) && return nothing
+#     _, state = n
+#     state.type === RAW_ELEMENT_CLOSE && return iterate(o, state)
+#     state.depth == depth + 1 && return (state, state)  # <-- only place we return a value
+#     state.depth == depth && return nothing
+#     type === RAW_DOCUMENT && state.depth == 2 && return nothing # early stop if we've seen the doc root already
+#     return iterate(o, state)
+# end
+
+# function Base.iterate(o::Children{RowNode}, state=getfield(o.parent, :data))
+#     n = iterate(Children(getfield(o.parent, :data)), state)
+#     isnothing(n) && return nothing
+#     item, state = n
+#     return RowNode(item), state
+# end
+
+
 
 
 
 #-----------------------------------------------------------------------------# !!! common !!!
 # Everything below here is common to all data structures
+
+
+nodetype(o) = o.nodetype
+depth(o) = o.depth
+tag(o) = o.tag
+attributes(o) = o.attributes
+value(o) = o.value
+
 
 #-----------------------------------------------------------------------------# nodes_equal
 function nodes_equal(a, b)

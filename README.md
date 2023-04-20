@@ -84,6 +84,7 @@ cdata("hello > < ' \" I have odd characters")
 ### `XML.RawData`
 - A super lazy data structure that holds the reference `Vector{UInt8}` data along with position/length to read from.
 
+
 ## Reading
 
 ```julia
