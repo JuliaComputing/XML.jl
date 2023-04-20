@@ -45,7 +45,7 @@ unescape(x::AbstractString) = replace(x, reverse.(escape_chars)...)
 @enum(RawDataType, RAW_DOCUMENT, RAW_TEXT, RAW_COMMENT, RAW_CDATA, RAW_PROCESSING_INSTRUCTION,
     RAW_DECLARATION, RAW_DTD, RAW_ELEMENT_OPEN, RAW_ELEMENT_CLOSE, RAW_ELEMENT_SELF_CLOSED)
 
-nodetype(x::RawDataType) =
+@inline nodetype(x::RawDataType) =
     x === RAW_ELEMENT_OPEN              ? ELEMENT :
     x === RAW_ELEMENT_CLOSE             ? ELEMENT :
     x === RAW_ELEMENT_SELF_CLOSED       ? ELEMENT :
@@ -126,38 +126,53 @@ is_node(o::RawData) = o.type !== RAW_ELEMENT_CLOSE
 nodes(o::RawData) = Iterators.Filter(is_node, o)
 
 #-----------------------------------------------------------------------------# get_name
-# find the start/stop of a name given a starting position `i`
-_name_start(data, i) = findnext(x -> isletter(Char(x)) || Char(x) === '_', data, i)
-is_name_char(x) = (c = Char(x); isletter(c) || isdigit(c) || c ∈ "._-:")
-function _name_stop(data, i)
-    i = findnext(!is_name_char, data, i)
-    isnothing(i) ? length(data) : i
-end
+# # find the start/stop of a name given a starting position `i`
+# _name_start(data, i) = findnext(x -> isletter(Char(x)) || Char(x) === '_', data, i)
+# is_name_char(x) = (c = Char(x); isletter(c) || isdigit(c) || c ∈ "._-:")
+# function _name_stop(data, i)
+#     i = findnext(!is_name_char, data, i)
+#     isnothing(i) ? length(data) : i
+# end
 
-# starting at position i, return name and position after name
+# # starting at position i, return name and position after name
+# function get_name(data, i)
+#     i = _name_start(data, i)
+#     j = _name_stop(data, i)
+#     @views name = String(data[i:j-1])
+#     return name, j
+# end
+
+is_name_start_char(x::UInt8) = x in UInt8('A'):UInt8('Z') || x in UInt8('a'):UInt8('z') || x == UInt8('_')
+
+# Character is letter, underscore, digit, hyphen, or period
+is_name_char(x::UInt8) = is_name_start_char(x) || x in UInt8('0'):UInt8('9') || x == UInt8('-') || x == UInt8('.')
+
+# find the start/stop of a name given a starting position `i`
+name_start(data, i) = findnext(is_name_start_char, data, i)
+name_stop(data, i) = findnext(!is_name_char, data, i) - 1
+
 function get_name(data, i)
-    i = _name_start(data, i)
-    j = _name_stop(data, i)
-    @views name = String(data[i:j-1])
-    return name, j
+    i = name_start(data, i)
+    j = name_stop(data, i)
+    @views String(data[i:j]), j + 1
 end
 
 #-----------------------------------------------------------------------------# get_attributes
 # starting at position i, return attributes up until the next '>' or '?' (DTD)
 function get_attributes(data, i)
     j = findnext(x -> x == UInt8('>') || x == UInt8('?'), data, i)
-    i = _name_start(data, i)
+    i = name_start(data, i)
     i > j && return nothing
     out = OrderedDict{String, String}()
     while !isnothing(i) && i < j
         key, i = get_name(data, i)
         # get quotechar the value is wrapped in (either ' or ")
-        i = findnext(x -> Char(x) === '"' || Char(x) === ''', data, i)
+        i = findnext(x -> Char(x) === '"' || Char(x) === ''', data, i + 1)
         quotechar = data[i]
         i2 = findnext(==(quotechar), data, i + 1)
         @views value = String(data[i+1:i2-1])
         out[key] = value
-        i = _name_start(data, i2)
+        i = name_start(data, i2)
     end
     return out
 end
@@ -189,9 +204,9 @@ Return the attributes of `ELEMENT`, `DECLARATION`, or `PROCESSING_INSTRUCTION` n
 function attributes(o::RawData)
     if o.type === RAW_ELEMENT_OPEN || o.type === RAW_ELEMENT_SELF_CLOSED || o.type === RAW_PROCESSING_INSTRUCTION
         i = o.pos
-        i = _name_start(o.data, i)
-        i = _name_stop(o.data, i)
-        get_attributes(o.data, i)
+        i = name_start(o.data, i)
+        i = name_stop(o.data, i)
+        get_attributes(o.data, i + 1)
     elseif o.type === RAW_DECLARATION
         get_attributes(o.data, o.pos + 6)
     else
@@ -257,7 +272,7 @@ end
 depth(o::RawData) = o.depth
 
 #-----------------------------------------------------------------------------# next RawData
-notspace(x::UInt8) = !isspace(Char(x))
+isspace(x::UInt8) = Base.isspace(Char(x))
 
 """
     next(node) --> typeof(node) or Nothing
@@ -268,7 +283,7 @@ would visit nodes by reading top-down through an XML file.  Not defined for `XML
 function next(o::RawData)
     i = o.pos + o.len + 1
     (; depth, data, type) = o
-    i = findnext(notspace, data, i)  # skip insignificant whitespace
+    i = findnext(!isspace, data, i)  # skip insignificant whitespace
     isnothing(i) && return nothing
     if type === RAW_ELEMENT_OPEN || type === RAW_DOCUMENT
         depth += 1
@@ -278,7 +293,7 @@ function next(o::RawData)
     if c !== '<'
         type = RAW_TEXT
         j = findnext(==(UInt8('<')), data, i) - 1
-        j = findprev(notspace, data, j)   # "rstrip"
+        j = findprev(!isspace, data, j)   # "rstrip"
     elseif c === '<'
         c2 = Char(o.data[i + 1])
         if c2 === '!'
@@ -326,7 +341,7 @@ function prev(o::RawData)
     (; depth, data, type) = o
     type === RAW_DOCUMENT && return nothing
     j = o.pos - 1
-    j = findprev(notspace, data, j)  # skip insignificant whitespace
+    j = findprev(!isspace, data, j)  # skip insignificant whitespace
     isnothing(j) && return RawData(data)  # RAW_DOCUMENT
     c = Char(o.data[j])
     i = j - 1
@@ -334,7 +349,7 @@ function prev(o::RawData)
     if c !== '>' # text
         type = RAW_TEXT
         i = findprev(==(UInt8('>')), data, j) + 1
-        i = findnext(notspace, data, i)  # "lstrip"
+        i = findnext(!isspace, data, i)  # "lstrip"
     elseif c === '>'
         c2 = Char(o.data[j - 1])
         if c2 === '-'
