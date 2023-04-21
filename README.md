@@ -8,19 +8,20 @@
 
 This package offers fast data structures for reading and writing XML files with a consistent interface:
 
-#### Interface Core:
+#### `Node`/`LazyNode` Interface:
 
-- `nodetype(node) --> XML.NodeType` (See `?XML.NodeType` for details).
-- `tag(node) --> String or Nothing`
-- `attributes(node) --> OrderedDict{String,String} or Nothing`
-- `value(node) --> String or Nothing`
-- `children(node) --> Vector{typeof(node)}`
-- `depth(node) --> Int`
+- `nodetype(node)   →   XML.NodeType` (See `?XML.NodeType` for details).
+- `tag(node)        →   String or Nothing`
+- `attributes(node) →   Dict{String,String} or Nothing`
+- `value(node)      →   String or Nothing`
+- `children(node)   →   Vector{typeof(node)}`
 
-#### Interface for Lazy Data Structures:
-- `next(node) --> typeof(node)`
-- `prev(node) --> typeof(node)`
-- `parent(node) --> typeof(node)`
+#### Extended Interface for `LazyNode`
+
+- `depth(node)      →   Int`
+- `next(node)       →   typeof(node)`
+- `prev(node)       →   typeof(node)`
+- `parent(node)     →   typeof(node)`
 
 ## Quickstart
 
@@ -29,11 +30,11 @@ using XML
 
 filename = joinpath(dirname(pathof(XML)), "..", "test", "books.xml")
 
-doc = XML.Node(filename)
+doc = Node(filename)
 
 children(doc)
 # 2-element Vector{Node}:
-#  Node DECLARATION <?xml version="1.0">
+#  Node DECLARATION <?xml version="1.0"?>
 #  Node ELEMENT <catalog> (12 children)
 
 doc[end]  # The root node
@@ -43,11 +44,12 @@ doc[end][2]  # Second child of root
 # Node ELEMENT <book id="bk102"> (6 children)
 ```
 
-## Data Structures
+## Node Types
 
 ### `XML.Node`
+
 - An eager data structure that loads the entire XML DOM in memory.
-- **This is what you should use to build an XML document programmatically.**
+- **This is what you would use to build an XML document programmatically.**
 - `Node`s have some additional methods that aid in construction/mutation:
 
 ```julia
@@ -56,15 +58,6 @@ push!(parent::Node, child::Node)
 
 # Replace a child:
 parent[2] = child
-
-# Create a new node with an edited field.  `kw...` can be one or more of:
-# - nodetype::NodeType
-# - tag (String or Nothing)
-# - attributes (OrderedDict{String,String} or Nothing)
-# - value (String or Nothing)
-# - children (Vector{Node} or nothing),
-# - depth::Int (this will be automatically set if not provided)
-Node(node; kw...)
 ```
 
 - Bring convenience functions into your namespace with `using XML.NodeConstructors`:
