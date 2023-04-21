@@ -119,7 +119,7 @@ XML.write(node)  # String
 ## Performance
 
 - Comparing benchmarks (fairly) between packages is hard.
-    - The most fair comparison is between "XML.jl - Node Load" and `XMLDict.jl - read` in which XMLDict is 1.4x slower.
+    - The most fair comparison is between `XML.jl - Node Load` and `XMLDict.jl - read` in which XMLDict is 1.4x slower.
 - See the `benchmarks/suite.jl` file.
 
 | Benchmark | code | median time | median GC |
