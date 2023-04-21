@@ -60,7 +60,7 @@ push!(parent::Node, child::Node)
 parent[2] = child
 ```
 
-- Bring convenience functions into your namespace with `using XML.NodeConstructors`:
+- `using XML.NodeConstructors` will give you access to convenience functions (`document`, `cdata`, `element`, etc.) for creating `Node`s.
 
 ```julia
 using XML.NodeConstructors
@@ -70,27 +70,37 @@ cdata("hello > < ' \" I have odd characters")
 # Node CDATA <![CDATA[hello > < ' " I have odd characters]]>
 ```
 
-### `XML.RowNode`
-- A data structure that can used as a *Tables.jl* source.  It is only lazy in how it accesses its children.
+### `XML.LazyNode`
 
+A lazy data structure that just keeps track of the position in the raw data (`Vector{UInt8}`) to read from.
 
-### `XML.RawData`
-- A super lazy data structure that holds the reference `Vector{UInt8}` data along with position/length to read from.
+- Iteration in depth first search (DFS) order.  This is the natural order in which you would visit XML nodes by reading an XML document from top to bottom.
+
+```julia
+doc = LazyNode(filename)
+
+foreach(println, doc)
+# LazyNode DECLARATION <?xml version="1.0"?>
+# LazyNode ELEMENT <catalog>
+# LazyNode ELEMENT <book id="bk101">
+# LazyNode ELEMENT <author>
+# LazyNode TEXT "Gambardella, Matthew"
+# LazyNode ELEMENT <title>
+# ⋮
+```
 
 
 ## Reading
 
 ```julia
-XML.RawData(filename)
-
-RowNode(filename)
-
+# Reading from file:
 Node(filename)
+LazyNode(filename)
 
-# Parsing:
-parse(XML.RawData, str)
-parse(RowNode, str)
+# Parsing from string:
 parse(Node, str)
+parse(LazyNode, str)
+
 ```
 
 ## Writing
@@ -103,39 +113,22 @@ XML.write(io::IO, node)  # write to stream
 XML.write(node)  # String
 ```
 
-## Iteration
 
-```julia
-doc = XML.RowNode(filename)
 
-foreach(println, doc)
-# RowNode DECLARATION <?xml version="1.0">
-# RowNode ELEMENT <catalog> (12 children)
-# RowNode ELEMENT <book id="bk101"> (6 children)
-# RowNode ELEMENT <author> (1 child)
-# RowNode TEXT "Gambardella, Matthew"
-# RowNode ELEMENT <title> (1 child)
-# ⋮
 
-# Use as Tables.jl source:
-using DataFrames
+## Performance
 
-DataFrame(doc)
-```
+- Comparing benchmarks (fairly) between packages is hard.
+    - The most fair comparison is between "XML.jl - Node Load" and `XMLDict.jl - read` in which XMLDict is 1.4x slower.
+- See the `benchmarks/suite.jl` file.
 
-Note that you can also iterate through `XML.RawData`.  However, *BEWARE* that this iterator
-has some non-node elements (e.g. just the closing tag of an element).
-
-```julia
-data = XML.RawData(filename)
-
-foreach(println, data)
-# 1: RAW_DECLARATION (pos=1, len=20): <?xml version="1.0"?>
-# 1: RAW_ELEMENT_OPEN (pos=23, len=8): <catalog>
-# 2: RAW_ELEMENT_OPEN (pos=36, len=16): <book id="bk101">
-# 3: RAW_ELEMENT_OPEN (pos=60, len=7): <author>
-# 4: RAW_TEXT (pos=68, len=19): Gambardella, Matthew
-# 3: RAW_ELEMENT_CLOSE (pos=88, len=8): </author>  <------ !!! NOT A NODE !!!
-# 3: RAW_ELEMENT_OPEN (pos=104, len=6): <title>
-# ⋮
-```
+| Benchmark | code | median time | median GC |
+|-----------|------|-------------|-----------|
+| XML.jl - Raw Data load | `XML.Raw($file)` | 10.083 μs | 0.00% |
+| XMLjl - LazyNode load | `LazyNode($file)` | 10.250 μs | 0.00% |
+| XML.jl - collect LazyNode | `collect(LazyNode($file))` | 102.149 ms | 24.51% GC |
+| XML.jl - Node load | `Node($file)` | 1.085 s | 16.16% |
+| EzXML.jl - read | `EzXML.readxml($file) | 192.345 ms | N/A |
+| XMLDict.jl - read | `XMLDict.xml_dict(read($file, String))` | 1.525 s | GC 23.17%
+| XML.jl LazyNode iteration | `for x in XML.LazyNode($file); end` | 67.547 ms | 16.55% GC
+| EzXML.StreamReader | `r = open(EzXML.StreamReader, $file); for x in r; end; close(r))` | 142.340 ms | N/A
