@@ -1,31 +1,31 @@
 #-----------------------------------------------------------------------------# RawType
 """
     RawType:
-    - RAW_TEXT                    # text
-    - RAW_COMMENT                 # <!-- ... -->
-    - RAW_CDATA                   # <![CDATA[...]]>
-    - RAW_DECLARATION             # <?xml attributes... ?>
-    - RAW_PROCESSING_INSTRUCTION  # <?NAME attributes... ?>
-    - RAW_DTD                     # <!DOCTYPE ...>
-    - RAW_ELEMENT_OPEN            # <NAME attributes... >
-    - RAW_ELEMENT_CLOSE           # </NAME>
-    - RAW_ELEMENT_SELF_CLOSED     # <NAME attributes... />
-    - RAW_DOCUMENT                # Something to initilize with (not really used)
+    - RawText                    # text
+    - RawComment                 # <!-- ... -->
+    - RawCData                   # <![CData[...]]>
+    - RawDeclaration             # <?xml attributes... ?>
+    - RawProcessingInstruction  # <?NAME attributes... ?>
+    - RawDTD                     # <!DOCTYPE ...>
+    - RawElementOpen            # <NAME attributes... >
+    - RawElementClose           # </NAME>
+    - RawElementSelfClosed     # <NAME attributes... />
+    - RawDocument                # Something to initilize with (not really used)
 """
-@enum(RawType, RAW_DOCUMENT, RAW_TEXT, RAW_COMMENT, RAW_CDATA, RAW_PROCESSING_INSTRUCTION,
-    RAW_DECLARATION, RAW_DTD, RAW_ELEMENT_OPEN, RAW_ELEMENT_CLOSE, RAW_ELEMENT_SELF_CLOSED)
+@enum(RawType, RawDocument, RawText, RawComment, RawCData, RawProcessingInstruction,
+    RawDeclaration, RawDTD, RawElementOpen, RawElementClose, RawElementSelfClosed)
 
 @inline nodetype(x::RawType) =
-    x === RAW_ELEMENT_OPEN              ? ELEMENT :
-    x === RAW_ELEMENT_CLOSE             ? ELEMENT :
-    x === RAW_ELEMENT_SELF_CLOSED       ? ELEMENT :
-    x === RAW_TEXT                      ? TEXT :
-    x === RAW_COMMENT                   ? COMMENT :
-    x === RAW_CDATA                     ? CDATA :
-    x === RAW_DECLARATION               ? DECLARATION :
-    x === RAW_DTD                       ? DTD :
-    x === RAW_PROCESSING_INSTRUCTION    ? PROCESSING_INSTRUCTION :
-    x === RAW_DOCUMENT                  ? DOCUMENT :
+    x === RawElementOpen            ? Element :
+    x === RawElementClose           ? Element :
+    x === RawElementSelfClosed      ? Element :
+    x === RawText                   ? Text :
+    x === RawComment                ? Comment :
+    x === RawCData                  ? CData :
+    x === RawDeclaration            ? Declaration :
+    x === RawDTD                    ? DTD :
+    x === RawProcessingInstruction  ? ProcessingInstruction :
+    x === RawDocument               ? Document :
     nothing
 
 #-----------------------------------------------------------------------------# Raw
@@ -34,16 +34,16 @@
 
 Create an iterator over raw chunks of data in an XML file.  Each chunk of data represents one of:
 
-    - RAW_DOCUMENT                # Only used to initialize the iterator state.
-    - RAW_TEXT                    # text
-    - RAW_COMMENT                 # <!-- ... -->
-    - RAW_CDATA                   # <![CDATA[...]]>
-    - RAW_DECLARATION             # <?xml attributes... ?>
-    - RAW_PROCESSING_INSTRUCTION  # <?NAME attributes... ?>
-    - RAW_DTD                     # <!DOCTYPE ...>
-    - RAW_ELEMENT_OPEN            # <NAME attributes... >
-    - RAW_ELEMENT_CLOSE           # </NAME>
-    - RAW_ELEMENT_SELF_CLOSED     # <NAME attributes... />
+    - RawDocument                # Only used to initialize the iterator state.
+    - RawText                    # text
+    - RawComment                 # <!-- ... -->
+    - RawCData                   # <![CData[...]]>
+    - RawDeclaration             # <?xml attributes... ?>
+    - RawProcessingInstruction  # <?NAME attributes... ?>
+    - RawDTD                     # <!DOCTYPE ...>
+    - RawElementOpen            # <NAME attributes... >
+    - RawElementClose           # </NAME>
+    - RawElementSelfClosed     # <NAME attributes... />
 
 Useful functions:
 
@@ -65,8 +65,10 @@ struct Raw
     len::Int
     data::Vector{UInt8}
 end
-Raw(data::Vector{UInt8}) = Raw(RAW_DOCUMENT, 0, 0, 0, data)
-Raw(filename::String) = Raw(Mmap.mmap(filename))
+Raw(data::Vector{UInt8}) = Raw(RawDocument, 0, 0, 0, data)
+
+Base.read(filename::String, ::Type{Raw}) = Raw(Mmap.mmap(filename))
+Base.read(io::IO, ::Type{Raw}) = Raw(read(io))
 
 parse(x::AbstractString, ::Type{Raw}) = Raw(Vector{UInt8}(x))
 
@@ -92,7 +94,7 @@ function Base.iterate(o::Raw, state=o)
     return isnothing(n) ? nothing : (n, n)
 end
 
-is_node(o::Raw) = o.type !== RAW_ELEMENT_CLOSE
+is_node(o::Raw) = o.type !== RawElementClose
 xml_nodes(o::Raw) = Iterators.Filter(is_node, o)
 
 #-----------------------------------------------------------------------------# get_name
@@ -139,25 +141,25 @@ nodetype(o::Raw) = nodetype(o.type)
 """
     tag(node) --> String or Nothing
 
-Return the tag name of `ELEMENT` and `PROCESESSING_INSTRUCTION` nodes.
+Return the tag name of `Element` and `PROCESESSING_INSTRUCTION` nodes.
 """
 function tag(o::Raw)
-    o.type ∉ [RAW_ELEMENT_OPEN, RAW_ELEMENT_CLOSE, RAW_ELEMENT_SELF_CLOSED, RAW_PROCESSING_INSTRUCTION] && return nothing
+    o.type ∉ [RawElementOpen, RawElementClose, RawElementSelfClosed, RawProcessingInstruction] && return nothing
     return get_name(o.data, o.pos + 1)[1]
 end
 
 """
     attributes(node) --> Dict{String, String} or Nothing
 
-Return the attributes of `ELEMENT`, `DECLARATION`, or `PROCESSING_INSTRUCTION` nodes.
+Return the attributes of `Element`, `Declaration`, or `ProcessingInstruction` nodes.
 """
 function attributes(o::Raw)
-    if o.type === RAW_ELEMENT_OPEN || o.type === RAW_ELEMENT_SELF_CLOSED || o.type === RAW_PROCESSING_INSTRUCTION
+    if o.type === RawElementOpen || o.type === RawElementSelfClosed || o.type === RawProcessingInstruction
         i = o.pos
         i = name_start(o.data, i)
         i = name_stop(o.data, i)
         get_attributes(o.data, i + 1, o.pos + o.len)
-    elseif o.type === RAW_DECLARATION
+    elseif o.type === RawDeclaration
         get_attributes(o.data, o.pos + 6, o.pos + o.len)
     else
         nothing
@@ -167,16 +169,16 @@ end
 """
     value(node) --> String or Nothing
 
-Return the value of `TEXT`, `CDATA`, `COMMENT`, or `DTD` nodes.
+Return the value of `Text`, `CData`, `Comment`, or `DTD` nodes.
 """
 function value(o::Raw)
-    if o.type === RAW_TEXT
+    if o.type === RawText
         unescape(String(o))
-    elseif o.type === RAW_CDATA
-        String(view(o.data, o.pos + length("<![CDATA[") : o.pos + o.len - 3))
-    elseif o.type === RAW_COMMENT
+    elseif o.type === RawCData
+        String(view(o.data, o.pos + length("<![CData[") : o.pos + o.len - 3))
+    elseif o.type === RawComment
         String(view(o.data, o.pos + length("<!--") : o.pos + o.len - 3))
-    elseif o.type === RAW_DTD
+    elseif o.type === RawDTD
         String(view(o.data, o.pos + length("<!DOCTYPE ") : o.pos + o.len - 1))
     else
         nothing
@@ -186,16 +188,16 @@ end
 """
     children(node) --> Vector{typeof(node)}
 
-Return the children the node.  Will only be nonempty for `ELEMENT` and `DOCUMENT` nodes.
+Return the children the node.  Will only be nonempty for `Element` and `Document` nodes.
 """
 function children(o::Raw)
-    if o.type === RAW_ELEMENT_OPEN || o.type === RAW_DOCUMENT
+    if o.type === RawElementOpen || o.type === RawDocument
         depth = o.depth
         out = Raw[]
         for item in xml_nodes(o)
             item.depth == depth + 1 && push!(out, item)
             item.depth == depth && break
-            o.type === RAW_DOCUMENT && item.depth == 2 && break # break if we've seen the doc root
+            o.type === RawDocument && item.depth == 2 && break # break if we've seen the doc root
         end
         out
     else
@@ -206,7 +208,7 @@ end
 """
     parent(node) --> typeof(node), Nothing
 
-Return the parent of the node.  Will be `nothing` for `DOCUMENT` nodes.  Not defined for `XML.Node`.
+Return the parent of the node.  Will be `nothing` for `Document` nodes.  Not defined for `XML.Node`.
 """
 function parent(o::Raw)
     depth = o.depth
@@ -233,13 +235,13 @@ function next(o::Raw)
     (; depth, data, type) = o
     i = findnext(!isspace, data, i)  # skip insignificant whitespace
     isnothing(i) && return nothing
-    if type === RAW_ELEMENT_OPEN || type === RAW_DOCUMENT
+    if type === RawElementOpen || type === RawDocument
         depth += 1
     end
     c = Char(o.data[i])
     j = i + 1
     if c !== '<'
-        type = RAW_TEXT
+        type = RawText
         j = findnext(==(UInt8('<')), data, i) - 1
         j = findprev(!isspace, data, j)   # "rstrip"
     elseif c === '<'
@@ -247,32 +249,32 @@ function next(o::Raw)
         if c2 === '!'
             c3 = Char(o.data[i + 2])
             if c3 === '-'
-                type = RAW_COMMENT
+                type = RawComment
                 j = findnext(Vector{UInt8}("-->"), data, i)[end]
             elseif c3 === '['
-                type = RAW_CDATA
+                type = RawCData
                 j = findnext(Vector{UInt8}("]]>"), data, i)[end]
             elseif c3 === 'D'
-                type = RAW_DTD
+                type = RawDTD
                 j = findnext(==(UInt8('>')), data, i)
             end
         elseif c2 === '?'
             if get_name(data, i + 2)[1] == "xml"
-                type = RAW_DECLARATION
+                type = RawDeclaration
             else
-                type = RAW_PROCESSING_INSTRUCTION
+                type = RawProcessingInstruction
             end
             j = findnext(Vector{UInt8}("?>"), data, i)[end]
         elseif c2 === '/'
-            type = RAW_ELEMENT_CLOSE
+            type = RawElementClose
             depth -= 1
             j = findnext(==(UInt8('>')), data, i)
         else
             j = findnext(==(UInt8('>')), data, i)
             if data[j-1] === UInt8('/')
-                type = RAW_ELEMENT_SELF_CLOSED
+                type = RawElementSelfClosed
             else
-                type = RAW_ELEMENT_OPEN
+                type = RawElementOpen
             end
         end
     end
@@ -287,41 +289,41 @@ Return the previous node in the document during depth-first traversal.  Not defi
 """
 function prev(o::Raw)
     (; depth, data, type) = o
-    type === RAW_DOCUMENT && return nothing
+    type === RawDocument && return nothing
     j = o.pos - 1
     j = findprev(!isspace, data, j)  # skip insignificant whitespace
-    isnothing(j) && return Raw(data)  # RAW_DOCUMENT
+    isnothing(j) && return Raw(data)  # RawDocument
     c = Char(o.data[j])
     i = j - 1
     next_type = type
     if c !== '>' # text
-        type = RAW_TEXT
+        type = RawText
         i = findprev(==(UInt8('>')), data, j) + 1
         i = findnext(!isspace, data, i)  # "lstrip"
     elseif c === '>'
         c2 = Char(o.data[j - 1])
         if c2 === '-'
-            type = RAW_COMMENT
+            type = RawComment
             i = findprev(Vector{UInt8}("<--"), data, j)[1]
         elseif c2 === ']'
-            type = RAW_CDATA
-            i = findprev(Vector{UInt8}("<![CDATA["), data, j)[1]
+            type = RawCData
+            i = findprev(Vector{UInt8}("<![CData["), data, j)[1]
         elseif c2 === '?'
             i = findprev(Vector{UInt8}("<?"), data, j)[1]
             if get_name(data, i + 2)[1] == "xml"
-                type = RAW_DECLARATION
+                type = RawDeclaration
             else
-                type = RAW_PROCESSING_INSTRUCTION
+                type = RawProcessingInstruction
             end
         else
             i = findprev(==(UInt8('<')), data, j)
             char = Char(data[i+1])
             if char === '/'
-                type = RAW_ELEMENT_CLOSE
+                type = RawElementClose
             elseif char === '!'
                 type = DTD
             elseif isletter(char) || char === '_'
-                type = Char(o.data[j - 2]) === '/' ? RAW_ELEMENT_SELF_CLOSED : RAW_ELEMENT_OPEN
+                type = Char(o.data[j - 2]) === '/' ? RawElementSelfClosed : RawElementOpen
             else
                 error("Should be unreachable.  Unexpected data: <$char ... $c3$c2$c1>.")
             end
@@ -329,9 +331,9 @@ function prev(o::Raw)
     else
         error("Unreachable reached in XML.prev")
     end
-    if type !== RAW_ELEMENT_OPEN && next_type === RAW_ELEMENT_CLOSE
+    if type !== RawElementOpen && next_type === RawElementClose
         depth += 1
-    elseif type == RAW_ELEMENT_OPEN && next_type !== RAW_ELEMENT_CLOSE
+    elseif type == RawElementOpen && next_type !== RawElementClose
         depth -= 1
     end
     return Raw(type, depth, i, j - i, data)

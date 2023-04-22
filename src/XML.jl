@@ -8,7 +8,7 @@ export
     NodeConstructors  # convenience functions for creating Nodes
 
 #-----------------------------------------------------------------------------# escape/unescape
-# only used by TEXT nodes
+# only used by Text nodes
 const escape_chars = ('&' => "&amp;", '<' => "&lt;", '>' => "&gt;", "'" => "&apos;", '"' => "&quot;")
 escape(x::AbstractString) = replace(x, escape_chars...)
 unescape(x::AbstractString) = replace(x, reverse.(escape_chars)...)
@@ -16,16 +16,17 @@ unescape(x::AbstractString) = replace(x, reverse.(escape_chars)...)
 #-----------------------------------------------------------------------------# NodeType
 """
     NodeType:
-    - DOCUMENT                  # prolog & root ELEMENT
+    - Document                  # prolog & root Element
     - DTD                       # <!DOCTYPE ...>
-    - DECLARATION               # <?xml attributes... ?>
-    - PROCESSING_INSTRUCTION    # <?NAME attributes... ?>
-    - COMMENT                   # <!-- ... -->
-    - CDATA                     # <![CDATA[...]]>
-    - ELEMENT                   # <NAME attributes... > children... </NAME>
-    - TEXT                      # text
+    - Declaration               # <?xml attributes... ?>
+    - ProcessingInstruction    # <?NAME attributes... ?>
+    - Comment                   # <!-- ... -->
+    - CData                     # <![CData[...]]>
+    - Element                   # <NAME attributes... > children... </NAME>
+    - Text                      # text
 """
-@enum(NodeType, DOCUMENT, DTD, DECLARATION, PROCESSING_INSTRUCTION, COMMENT, CDATA, ELEMENT, TEXT)
+@enum(NodeType, Document, DTD, Declaration, ProcessingInstruction, Comment, CData, Element, Text)
+
 
 #-----------------------------------------------------------------------------# raw
 include("raw.jl")
@@ -61,9 +62,9 @@ Base.propertynames(o::LazyNode) = (:raw, :nodetype, :tag, :attributes, :value, :
 
 Base.show(io::IO, o::LazyNode) = _show_node(io, o)
 
-LazyNode(file::AbstractString) = LazyNode(Raw(file))
-
-parse(x::AbstractString, ::Type{LazyNode}) = LazyNode(parse(x, Raw))
+Base.read(io::IO, ::Type{LazyNode}) = LazyNode(read(io, Raw))
+Base.read(filename::AbstractString, ::Type{LazyNode}) = LazyNode(read(filename, Raw))
+Base.parse(x::AbstractString, ::Type{LazyNode}) = LazyNode(parse(x, Raw))
 
 children(o::LazyNode) = LazyNode.(children(o.raw))
 parent(o::LazyNode) = LazyNode(parent(o.raw))
@@ -80,12 +81,12 @@ end
 function next(o::LazyNode)
     n = next(o.raw)
     isnothing(n) && return nothing
-    n.type === RAW_ELEMENT_CLOSE ? next(LazyNode(n)) : LazyNode(n)
+    n.type === RawElementClose ? next(LazyNode(n)) : LazyNode(n)
 end
 function prev(o::LazyNode)
     n = prev(o.raw)
     isnothing(n) && return nothing
-    n.type === RAW_ELEMENT_CLOSE ? prev(LazyNode(n)) : LazyNode(n)
+    n.type === RawElementClose ? prev(LazyNode(n)) : LazyNode(n)
 end
 
 #-----------------------------------------------------------------------------# Node
@@ -102,17 +103,28 @@ struct Node <: AbstractXMLNode
     attributes::Union{Nothing, Dict{String, String}}
     value::Union{Nothing, String}
     children::Union{Nothing, Vector{Node}}
-    function Node(nodetype, tag=nothing, attributes=nothing, value=nothing, children=nothing)
-        new(nodetype, tag, attributes, value, children)
+
+    function Node(nodetype::NodeType, tag=nothing, attributes=nothing, value=nothing, children=nothing)
+        new(nodetype,
+            isnothing(tag) ? nothing : string(tag),
+            isnothing(attributes) ? nothing : Dict(string(k) => string(v) for (k, v) in pairs(attributes)),
+            isnothing(value) ? nothing : string(value),
+            isnothing(children) ? nothing :
+                children isa Vector{Node} ? children : begin
+                    if any(x -> !(x isa Node), children)
+                        Base.depwarn("Providing non-Node children to a Node is deprecated.  " *
+                            "All provided children have been changed to Text(input)", :Node; force=true)
+                    end
+                    map(Node, collect(children))
+                end
+        )
     end
 end
-Node(o::Node) = o
-
-Node(o::Node; kw...) = Node((get(kw, x, getfield(o, x)) for x in fieldnames(Node))...)
-
-Node(file::AbstractString) = Node(Raw(file))
+Node(o::Node; kw...) = isempty(kw) ? o : Node((get(kw, x, getfield(o, x)) for x in fieldnames(Node))...)
 
 Node(data::Raw) = Node(LazyNode(data))
+
+Node(x) = Node(Text, nothing, nothing, string(x), nothing)
 
 function Node(node::LazyNode)
     (;nodetype, tag, attributes, value) = node
@@ -120,7 +132,10 @@ function Node(node::LazyNode)
     Node(nodetype, tag, attributes, value, isempty(c) ? nothing : map(Node, c))
 end
 
-parse(x::AbstractString, ::Type{Node} = Node) = Node(parse(x, Raw))
+
+Base.read(filename::AbstractString, ::Type{Node}) = Node(read(filename, Raw))
+Base.read(io::IO, ::Type{Node}) = Node(read(io, Raw))
+Base.parse(x::AbstractString, ::Type{Node} = Node) = Node(parse(x, Raw))
 
 Base.setindex!(o::Node, val, i::Integer) = o.children[i] = Node(val)
 Base.push!(a::Node, b::Node) = push!(a.children, b)
@@ -128,89 +143,39 @@ Base.push!(a::Node, b::Node) = push!(a.children, b)
 Base.show(io::IO, o::Node) = _show_node(io, o)
 
 #-----------------------------------------------------------------------------# Node Constructors
-# auto-detect how to create a Node
-_node(x; depth=-1) = Node(nodetype=TEXT, value=string(x); depth)
-_node(x::Node; depth=x.depth) = Node(x; depth)
-
-module NodeConstructors
-import .._node
-import ..Node, ..Dict
-import ..TEXT, ..DOCUMENT, ..DTD, ..DECLARATION, ..PROCESSING_INSTRUCTION, ..COMMENT, ..CDATA, ..ELEMENT
-
-export document, dtd, declaration, processing_instruction, comment, cdata, text, element
-
-attrs(kw) = Dict{String,String}(string(k) => string(v) for (k,v) in kw)
-
-"""
-    document(children::Vector{Node})
-    document(children::Node...)
-
-Create an `XML.Node` with `nodetype=DOCUMENT` and the provided `children`.
-"""
-document(children::Vector{Node}) = Node(DOCUMENT, nothing, nothing, nothing, children)
-document(children::Node...) = document(collect(children))
-
-"""
-    dtd(value::AbstractString)
-
-Create an `XML.Node` with `nodetype=DTD` and the provided `value`.
-"""
-dtd(value::AbstractString) = Node(DTD, nothing, nothing, String(value))
-
-"""
-    declaration(; attributes...)
-
-Create an `XML.Node` with `nodetype=DECLARATION` and the provided `attributes`.
-"""
-declaration(attributes::Dict{String,String}) = Node(DECLARATION, nothing, attributes)
-declaration(; kw...) = declaration(attrs(kw))
-
-"""
-    processing_instruction(tag::AbstractString; attributes...)
-
-Create an `XML.Node` with `nodetype=PROCESSING_INSTRUCTION` and the provided `tag` and `attributes`.
-"""
-processing_instruction(tag, attributes::Dict{String,String}) = Node(PROCESSING_INSTRUCTION, string(tag), attributes)
-processing_instruction(tag; kw...) = processing_instruction(tag, attrs(kw))
-
-"""
-    comment(value::AbstractString)
-
-Create an `XML.Node` with `nodetype=COMMENT` and the provided `value`.
-"""
-comment(value::AbstractString) = Node(COMMENT, nothing, nothing, String(value))
-
-"""
-    cdata(value::AbstractString)
-
-Create an `XML.Node` with `nodetype=CDATA` and the provided `value`.
-"""
-cdata(value::AbstractString) = Node(CDATA, nothing, nothing, String(value))
-
-"""
-    text(value::AbstractString)
-
-Create an `XML.Node` with `nodetype=TEXT` and the provided `value`.
-"""
-text(value::AbstractString) = Node(TEXT, nothing, nothing, String(value))
-
-"""
-    element(tag children::Vector{Node}; attributes...)
-    element(tag, children::Node...; attributes...)
-    element(tag, children::Vector{Node}, attributes::Dict{String,String})
-
-Create an `XML.Node` with `nodetype=ELEMENT` and the provided `tag`, `children`, and `attributes`.
-"""
-element(tag, children...; kw...) = Node(ELEMENT, string(tag), attrs(kw), nothing, map(Node, collect(children)))
-element(tag, children::Vector{Node}; kw...) = element(tag, children...; kw...)
-element(tag, children::Vector{Node}, attrs::Dict{String,String}) = Node(ELEMENT, tag, attrs, nothing, children)
-end  # module NodeConstructors
-
-
-
-
-
-
+function (T::NodeType)(args...; attr...)
+    if T === Document
+        !isempty(attr) && error("Document nodes do not have attributes.")
+        Node(T, nothing, nothing, nothing, args)
+    elseif T === DTD
+        !isempty(attr) && error("DTD nodes only accept a value.")
+        length(args) > 1 && error("DTD nodes only accept a value.")
+        Node(T, nothing, nothing, only(args))
+    elseif T === Declaration
+        !isempty(args) && error("Declaration nodes only accept attributes")
+        Node(T, nothing, attr)
+    elseif T === ProcessingInstruction
+        length(args) == 1 || error("ProcessingInstruction nodes require a tag and attributes.")
+        Node(T, only(args), attr)
+    elseif T === Comment
+        !isempty(attr) && error("Comment nodes do not have attributes.")
+        length(args) > 1 && error("Comment nodes only accept a single input.")
+        Node(T, nothing, nothing, only(args))
+    elseif T === CData
+        !isempty(attr) && error("CData nodes do not have attributes.")
+        length(args) > 1 && error("CData nodes only accept a single input.")
+        Node(T, nothing, nothing, only(args))
+    elseif T === Text
+        !isempty(attr) && error("Text nodes do not have attributes.")
+        length(args) > 1 && error("Text nodes only accept a single input.")
+        Node(T, nothing, nothing, only(args))
+    elseif T === Element
+        tag = first(args)
+        Node(T, tag, attr, nothing, args[2:end])
+    else
+        error("Unreachable reached while trying to create a Node via (::NodeType)(args...; kw...).")
+    end
+end
 
 #-----------------------------------------------------------------------------# !!! common !!!
 # Everything below here is common to all data structures
@@ -260,9 +225,9 @@ function _show_node(io::IO, o)
     !ismissing(depth(o)) && print(io, depth(o), ':')
     printstyled(io, typeof(o), ' '; color=:light_black)
     printstyled(io, nodetype(o), ; color=:light_green)
-    if o.nodetype === TEXT
+    if o.nodetype === Text
         printstyled(io, ' ', repr(value(o)))
-    elseif o.nodetype === ELEMENT
+    elseif o.nodetype === Element
         printstyled(io, " <", tag(o), color=:light_cyan)
         _print_attrs(io, o)
         printstyled(io, '>', color=:light_cyan)
@@ -271,23 +236,23 @@ function _show_node(io::IO, o)
         printstyled(io, " <!DOCTYPE "; color=:light_cyan)
         printstyled(io, value(o), color=:light_black)
         printstyled(io, '>', color=:light_cyan)
-    elseif o.nodetype === DECLARATION
+    elseif o.nodetype === Declaration
         printstyled(io, " <?xml", color=:light_cyan)
         _print_attrs(io, o)
         printstyled(io, "?>", color=:light_cyan)
-    elseif o.nodetype === PROCESSING_INSTRUCTION
+    elseif o.nodetype === ProcessingInstruction
         printstyled(io, " <?", tag(o), color=:light_cyan)
         _print_attrs(io, o)
         printstyled(io, "?>", color=:light_cyan)
-    elseif o.nodetype === COMMENT
+    elseif o.nodetype === Comment
         printstyled(io, " <!--", color=:light_cyan)
         printstyled(io, value(o), color=:light_black)
         printstyled(io, "-->", color=:light_cyan)
-    elseif o.nodetype === CDATA
-        printstyled(io, " <![CDATA[", color=:light_cyan)
+    elseif o.nodetype === CData
+        printstyled(io, " <![CData[", color=:light_cyan)
         printstyled(io, value(o), color=:light_black)
         printstyled(io, "]]>", color=:light_cyan)
-    elseif o.nodetype === DOCUMENT
+    elseif o.nodetype === Document
         _print_n_children(io, o)
     elseif o.nodetype === UNKNOWN
         printstyled(io, "Unknown", color=:light_cyan)
@@ -322,14 +287,14 @@ function write(io::IO, x; indent = "   ", depth=depth(x))
 
     padding = indent ^ max(0, depth - 1)
     print(io, padding)
-    if nodetype === TEXT
+    if nodetype === Text
         print(io, escape(value))
-    elseif nodetype === ELEMENT
+    elseif nodetype === Element
         print(io, '<', tag)
         _print_attrs(io, x)
         print(io, isempty(children) ? '/' : "", '>')
         if !isempty(children)
-            if length(children) == 1 && XML.nodetype(only(children)) === TEXT
+            if length(children) == 1 && XML.nodetype(only(children)) === Text
                 write(io, only(children); indent="")
                 print(io, "</", tag, '>')
             else
@@ -343,19 +308,19 @@ function write(io::IO, x; indent = "   ", depth=depth(x))
         end
     elseif nodetype === DTD
         print(io, "<!DOCTYPE", value, '>')
-    elseif nodetype === DECLARATION
+    elseif nodetype === Declaration
         print(io, "<?xml")
         _print_attrs(io, x)
         print(io, "?>")
-    elseif nodetype === PROCESSING_INSTRUCTION
+    elseif nodetype === ProcessingInstruction
         print(io, "<?", tag)
         _print_attrs(io, x)
         print(io, "?>")
-    elseif nodetype === COMMENT
+    elseif nodetype === Comment
         print(io, "<!--", value, "-->")
-    elseif nodetype === CDATA
-        print(io, "<![CDATA[", value, "]]>")
-    elseif nodetype === DOCUMENT
+    elseif nodetype === CData
+        print(io, "<![CData[", value, "]]>")
+    elseif nodetype === Document
         foreach(children) do child
             write(io, child; indent)
             println(io)

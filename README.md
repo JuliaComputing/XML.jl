@@ -30,18 +30,18 @@ using XML
 
 filename = joinpath(dirname(pathof(XML)), "..", "test", "books.xml")
 
-doc = Node(filename)
+doc = read(filename, Node)
 
 children(doc)
-# 2-element Vector{Node}:
-#  Node DECLARATION <?xml version="1.0"?>
-#  Node ELEMENT <catalog> (12 children)
+# 2-Element Vector{Node}:
+#  Node Declaration <?xml version="1.0"?>
+#  Node Element <catalog> (12 children)
 
 doc[end]  # The root node
-# Node ELEMENT <catalog> (12 children)
+# Node Element <catalog> (12 children)
 
 doc[end][2]  # Second child of root
-# Node ELEMENT <book id="bk102"> (6 children)
+# Node Element <book id="bk102"> (6 children)
 ```
 
 ## Node Types
@@ -60,14 +60,17 @@ push!(parent::Node, child::Node)
 parent[2] = child
 ```
 
-- `using XML.NodeConstructors` will give you access to convenience functions (`document`, `cdata`, `element`, etc.) for creating `Node`s.
+- **XML** defines `(::NodeType)(args...; kw...)` for more convenient syntax in creating `Node`s, e.g.:
 
 ```julia
-using XML.NodeConstructors
-# cdata, comment, declaration, document, dtd, element, processing_instruction, text
-
-cdata("hello > < ' \" I have odd characters")
-# Node CDATA <![CDATA[hello > < ' " I have odd characters]]>
+CData(value)
+Comment(value)
+Declaration(; attributes...)
+Document(children...)
+DTD(; attributes...)
+Element(tag, children...; attributes...)
+ProcessingInstruction(; attributes...)
+Text(value)
 ```
 
 ### `XML.LazyNode`
@@ -77,15 +80,15 @@ A lazy data structure that just keeps track of the position in the raw data (`Ve
 - Iteration in depth first search (DFS) order.  This is the natural order in which you would visit XML nodes by reading an XML document from top to bottom.
 
 ```julia
-doc = LazyNode(filename)
+doc = read(filename, LazyNode)
 
 foreach(println, doc)
-# LazyNode DECLARATION <?xml version="1.0"?>
-# LazyNode ELEMENT <catalog>
-# LazyNode ELEMENT <book id="bk101">
-# LazyNode ELEMENT <author>
-# LazyNode TEXT "Gambardella, Matthew"
-# LazyNode ELEMENT <title>
+# LazyNode Declaration <?xml version="1.0"?>
+# LazyNode Element <catalog>
+# LazyNode Element <book id="bk101">
+# LazyNode Element <author>
+# LazyNode Text "Gambardella, Matthew"
+# LazyNode Element <title>
 # ⋮
 ```
 
@@ -94,8 +97,8 @@ foreach(println, doc)
 
 ```julia
 # Reading from file:
-Node(filename)
-LazyNode(filename)
+read(filename, Node)
+read(filename, LazyNode)
 
 # Parsing from string:
 parse(Node, str)

@@ -1,4 +1,5 @@
 using XML
+using XML: Document, Element, Declaration, Comment, CData, DTD, ProcessingInstruction, Text
 using Downloads: download
 using Test
 
@@ -19,30 +20,30 @@ all_files = [
 @testset "Raw tag/attributes/value" begin
     examples = [
         (xml = "<!DOCTYPE html>",
-            nodetype = XML.DTD,
+            nodetype = DTD,
             tag=nothing,
             attributes=nothing,
             value="html"),
 
         (xml = "<?xml version=\"1.0\" key=\"value\"?>",
-            nodetype = XML.DECLARATION,
+            nodetype = Declaration,
             tag=nothing,
             attributes=Dict("version" => "1.0", "key" => "value"),
             value=nothing),
 
         (xml = "<tag _id=\"1\", x=\"abc\" />",
-            nodetype = XML.ELEMENT,
+            nodetype = Element,
             tag="tag",
             attributes=Dict("_id" => "1", "x" => "abc"),
             value=nothing),
         (xml = "<!-- comment -->",
-            nodetype = XML.COMMENT,
+            nodetype = Comment,
             tag=nothing,
             attributes=nothing,
             value=" comment "),
 
-        (xml = "<![CDATA[cdata test]]>",
-            nodetype = XML.CDATA,
+        (xml = "<![CData[cdata test]]>",
+            nodetype = CData,
             tag=nothing,
             attributes=nothing,
             value="cdata test"),
@@ -59,16 +60,16 @@ end
 
 @testset "Raw with books.xml" begin
     file = "books.xml"
-    data = XML.Raw(file)
+    data = read(file, XML.Raw)
     doc = collect(data)
     @test length(doc) > countlines(file)
     # Check that the first 5 lines are correct
     first_5_lines = [
-        XML.RAW_DECLARATION => """<?xml version="1.0"?>""",
-        XML.RAW_ELEMENT_OPEN => "<catalog>",
-        XML.RAW_ELEMENT_OPEN => "<book id=\"bk101\">",
-        XML.RAW_ELEMENT_OPEN => "<author>",
-        XML.RAW_TEXT => "Gambardella, Matthew"
+        XML.RawDeclaration => """<?xml version="1.0"?>""",
+        XML.RawElementOpen => "<catalog>",
+        XML.RawElementOpen => "<book id=\"bk101\">",
+        XML.RawElementOpen => "<author>",
+        XML.RawText => "Gambardella, Matthew"
     ]
     for (i, (typ, str)) in enumerate(first_5_lines)
         dt = doc[i]
@@ -76,7 +77,7 @@ end
         @test String(dt) == str
     end
     # Check that the last line is correct
-    @test doc[end].type == XML.RAW_ELEMENT_CLOSE
+    @test doc[end].type == XML.RawElementClose
     @test String(doc[end]) == "</catalog>"
 
     @testset "next and prev" begin
@@ -130,10 +131,10 @@ end
 @testset "read/write/read roundtrip" begin
     for (name, path) = all_files
         # @info "read/write/read roundtrip" name
-        node = Node(path)
+        node = read(path, Node)
         temp = tempname() * ".xml"
         XML.write(temp, node; indent = " ")
-        node2 = Node(temp)
+        node2 = read(temp, Node)
         @test node == node2
 
         # For debugging:
@@ -148,26 +149,18 @@ end
 end
 
 #-----------------------------------------------------------------------------# Node writing
-using XML.NodeConstructors
-
 @testset "Node writing" begin
-    doc = document(
-        dtd("root_tag"),
-        declaration(version=1.0),
-        comment("comment"),
-        processing_instruction("xml-stylesheet", href="mystyle.css", type="text/css"),
-        element("root_tag", cdata("cdata"), text("text"))
+    doc = Document(
+        DTD("root_tag"),
+        Declaration(version=1.0),
+        Comment("comment"),
+        ProcessingInstruction("xml-stylesheet", href="mystyle.css", type="text/css"),
+        Element("root_tag", CData("cdata"), Text("text"))
     )
-    @test map(nodetype, children(doc)) == [
-        XML.DTD,
-        XML.DECLARATION,
-        XML.COMMENT,
-        XML.PROCESSING_INSTRUCTION,
-        XML.ELEMENT
-    ]
+    @test map(nodetype, children(doc)) == [DTD,Declaration,Comment,ProcessingInstruction,Element]
     @test length(children(doc[end])) == 2
-    @test nodetype(doc[end][1]) == XML.CDATA
-    @test nodetype(doc[end][2]) == XML.TEXT
+    @test nodetype(doc[end][1]) == XML.CData
+    @test nodetype(doc[end][2]) == XML.Text
     @test value(doc[end][1]) == "cdata"
     @test value(doc[end][2]) == "text"
 end
