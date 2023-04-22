@@ -11,6 +11,14 @@ This package offers fast data structures for reading and writing XML files with 
 #### `Node`/`LazyNode` Interface:
 
 - `nodetype(node)   →   XML.NodeType` (See `?XML.NodeType` for details).
+    - `Document                  # prolog & root Element`
+    - `DTD                       # <!DOCTYPE ...>`
+    - `Declaration               # <?xml attributes... ?>`
+    - `ProcessingInstruction     # <?NAME attributes... ?>`
+    - `Comment                   # <!-- ... -->`
+    - `CData                     # <![CData[...]]>`
+    - `Element                   # <NAME attributes... > children... </NAME>`
+    - `Text                      # text`
 - `tag(node)        →   String or Nothing`
 - `attributes(node) →   Dict{String,String} or Nothing`
 - `value(node)      →   String or Nothing`

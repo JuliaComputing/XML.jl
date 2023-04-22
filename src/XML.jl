@@ -25,7 +25,7 @@ unescape(x::AbstractString) = replace(x, reverse.(escape_chars)...)
     - Element                   # <NAME attributes... > children... </NAME>
     - Text                      # text
 """
-@enum(NodeType, Document, DTD, Declaration, ProcessingInstruction, Comment, CData, Element, Text)
+@enum(NodeType, CData, Comment, Declaration, Document, DTD, Element, ProcessingInstruction, Text)
 
 
 #-----------------------------------------------------------------------------# raw
