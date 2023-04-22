@@ -1,5 +1,6 @@
 [deps]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 EzXML = "8f5d6c58-4d21-5cfd-889c-e3ad7ee6a615"
+UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 XML = "72c71f33-b9b6-44de-8c94-c961784809e2"
 XMLDict = "228000da-037f-5747-90a9-8195ccbf91a5"

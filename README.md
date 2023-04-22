@@ -138,12 +138,23 @@ XML.write(node)  # String
  Row │ name                    bench
      │ String                  Trial
 ─────┼───────────────────────────────────────────
-   1 │ XML.Raw                 Trial(9.958 μs)
-   2 │ XML.LazyNode            Trial(10.000 μs)
-   3 │ collect(XML.LazyNode)   Trial(56.973 ms)
-   4 │ XML.Node                Trial(990.248 ms)
-   5 │ EzXML.readxml           Trial(158.977 ms)
-   6 │ XMLDict.xml_dict        Trial(1.278 s)
-   7 │ XML.LazyNode iteration  Trial(58.164 ms)
-   8 │ EzXML.StreamReader      Trial(138.631 ms)
-   ```
+   1 │ XML.Raw                 Trial(9.833 μs)
+   2 │ XML.LazyNode            Trial(9.875 μs)
+   3 │ collect(XML.LazyNode)   Trial(61.907 ms)
+   4 │ XML.Node                Trial(981.630 ms)
+   5 │ EzXML.readxml           Trial(162.071 ms)
+   6 │ XMLDict.xml_dict        Trial(1.047 s)
+   7 │ XML.LazyNode iteration  Trial(48.887 ms)
+   8 │ EzXML.StreamReader      Trial(138.746 ms)
+```
+
+```
+                  XML.Raw   0.010209
+             XML.LazyNode   0.010333
+    collect(XML.LazyNode)  ■■ 75.811
+                 XML.Node  ■■■■■■■■■■■■■■■■■■■■■■■■■■ 996.321
+            EzXML.readxml  ■■■■■ 198.103
+         XMLDict.xml_dict  ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ 1207.79
+   XML.LazyNode iteration  ■ 55.5357
+       EzXML.StreamReader  ■■■■ 141.868
+```

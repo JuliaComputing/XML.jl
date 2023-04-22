@@ -3,6 +3,7 @@ using EzXML: EzXML
 using XMLDict: XMLDict
 using BenchmarkTools
 using DataFrames
+using UnicodePlots
 
 
 # nasa.xml was downloaded from:
@@ -39,10 +40,12 @@ push!(benchmarks, "XML.LazyNode iteration" => @benchmark((for x in read($file, L
 push!(benchmarks, "EzXML.StreamReader" => @benchmark((reader = open(EzXML.StreamReader, $file); for x in reader; end; close(reader))))
 
 #-----------------------------------------------------------------------------# make DataFrame
-out = DataFrame()
+df = DataFrame()
 
 for (name, bench) in benchmarks
-    push!(out, (; name, bench))
+    push!(df, (; name, bench))
 end
 
-out
+df
+
+barplot(df.name, map(x -> median(x).time / 1000^2, df.bench), title="Median Benchmark Time (s)", border=:none)
