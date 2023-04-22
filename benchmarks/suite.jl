@@ -2,20 +2,47 @@ using XML: XML
 using EzXML: EzXML
 using XMLDict: XMLDict
 using BenchmarkTools
+using DataFrames
 
 
 # nasa.xml was downloaded from:
 # http://aiweb.cs.washington.edu/research/projects/xmltk/xmldata/www/repository.html#nasa
 file = joinpath(@__DIR__, "nasa.xml")
 
-#-----------------------------------------------------------------------------# Read
-@info "XML.Raw" @benchmark XML.Raw($file)  # median: 10.083 μs (0.00% GC)
-@info "XML.LazyNode" @benchmark XML.LazyNode($file)  # median: 10.250 μs (0.00% GC)
-@info "collect(XML.LazyNode)" @benchmark collect(XML.LazyNode($file))  # median 102.149 ms (24.51% GC)
-@info "XML.Node" @benchmark Node($file)  # median: 1.085 s (16.16% GC)
-@info "EzXML.readxml" @benchmark EzXML.readxml($file)  # median: 192.345 ms
-@info "XMLDict.xml_dict" @benchmark XMLDict.xml_dict(read($file, String))  # median: 1.525 s (GC 23.17%)
 
-#-----------------------------------------------------------------------------# Iteration
-@info "XML.LazyNode iteration" @benchmark (for x in XML.LazyNode($file); end)  # 67.547 ms (16.55% GC)
-@info "EzXML.StreamReader" @benchmark (reader = open(EzXML.StreamReader, $file); for x in reader; end; close(reader))  # median 142.340 ms
+
+#-----------------------------------------------------------------------------# benchmarks
+benchmarks = []
+
+@info "XML.Raw"
+push!(benchmarks, "XML.Raw" => @benchmark(read($file, XML.Raw)))
+
+@info "XML.LazyNode"
+push!(benchmarks, "XML.LazyNode" => @benchmark(read($file, LazyNode)))
+
+@info "collect(LazyNode)"
+push!(benchmarks, "collect(XML.LazyNode)" => @benchmark(collect(read($file, LazyNode))))
+
+@info "XML.Node"
+push!(benchmarks, "XML.Node" => @benchmark(read($file, Node)))
+
+@info "EzXML"
+push!(benchmarks, "EzXML.readxml" => @benchmark(EzXML.readxml($file)))
+
+@info "XMLDict"
+push!(benchmarks, "XMLDict.xml_dict" => @benchmark(XMLDict.xml_dict(read($file, String))))
+
+@info "LazyNode iteration"
+push!(benchmarks, "XML.LazyNode iteration" => @benchmark((for x in read($file, LazyNode); end)))
+
+@info "EzXML.StreamReader iteration"
+push!(benchmarks, "EzXML.StreamReader" => @benchmark((reader = open(EzXML.StreamReader, $file); for x in reader; end; close(reader))))
+
+#-----------------------------------------------------------------------------# make DataFrame
+out = DataFrame()
+
+for (name, bench) in benchmarks
+    push!(out, (; name, bench))
+end
+
+out

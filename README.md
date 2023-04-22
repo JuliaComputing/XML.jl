@@ -122,16 +122,20 @@ XML.write(node)  # String
 ## Performance
 
 - Comparing benchmarks (fairly) between packages is hard.
-    - The most fair comparison is between `XML.jl - Node Load` and `XMLDict.jl - read` in which XMLDict is 1.4x slower.
+    - The most fair comparison is between `XML.Node` and `XMLDict.xml_dict`.
 - See the `benchmarks/suite.jl` file.
 
-| Benchmark | code | median time | median GC |
-|-----------|------|-------------|-----------|
-| XML.jl - Raw Data load | `XML.Raw($file)` | 10.083 μs | 0.00% |
-| XMLjl - LazyNode load | `LazyNode($file)` | 10.250 μs | 0.00% |
-| XML.jl - collect LazyNode | `collect(LazyNode($file))` | 102.149 ms | 24.51% GC |
-| XML.jl - Node load | `Node($file)` | 1.085 s | 16.16% |
-| EzXML.jl - read | `EzXML.readxml($file) | 192.345 ms | N/A |
-| XMLDict.jl - read | `XMLDict.xml_dict(read($file, String))` | 1.525 s | GC 23.17%
-| XML.jl LazyNode iteration | `for x in XML.LazyNode($file); end` | 67.547 ms | 16.55% GC
-| EzXML.StreamReader | `r = open(EzXML.StreamReader, $file); for x in r; end; close(r))` | 142.340 ms | N/A
+```
+8×2 DataFrame
+ Row │ name                    bench
+     │ String                  Trial
+─────┼───────────────────────────────────────────
+   1 │ XML.Raw                 Trial(9.958 μs)
+   2 │ XML.LazyNode            Trial(10.000 μs)
+   3 │ collect(XML.LazyNode)   Trial(56.973 ms)
+   4 │ XML.Node                Trial(990.248 ms)
+   5 │ EzXML.readxml           Trial(158.977 ms)
+   6 │ XMLDict.xml_dict        Trial(1.278 s)
+   7 │ XML.LazyNode iteration  Trial(58.164 ms)
+   8 │ EzXML.StreamReader      Trial(138.631 ms)
+   ```
