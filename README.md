@@ -155,6 +155,13 @@ Platform Info:
    XMLDict.xml_dict  ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ 1350.63
 ```
 
+### Writing an XML File
+
+```
+         Write: XML  ■■■■■■■■■■■■■■■■■■■■■■ 244.261
+       Write: EzXML  ■■■■■■■■■■ 106.953
+```
+
 ### Lazily Iterating over Each Node
 ```
            LazyNode  ■■■■■■■■■■■■■■■■ 55.1

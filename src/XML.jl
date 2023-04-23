@@ -229,7 +229,7 @@ function _show_node(io::IO, o)
         printstyled(io, ' ', repr(value(o)))
     elseif o.nodetype === Element
         printstyled(io, " <", tag(o), color=:light_cyan)
-        _print_attrs(io, o)
+        _print_attrs(io, o; color=:light_yellow)
         printstyled(io, '>', color=:light_cyan)
         _print_n_children(io, o)
     elseif o.nodetype === DTD
@@ -238,11 +238,11 @@ function _show_node(io::IO, o)
         printstyled(io, '>', color=:light_cyan)
     elseif o.nodetype === Declaration
         printstyled(io, " <?xml", color=:light_cyan)
-        _print_attrs(io, o)
+        _print_attrs(io, o; color=:light_yellow)
         printstyled(io, "?>", color=:light_cyan)
     elseif o.nodetype === ProcessingInstruction
         printstyled(io, " <?", tag(o), color=:light_cyan)
-        _print_attrs(io, o)
+        _print_attrs(io, o; color=:light_yellow)
         printstyled(io, "?>", color=:light_cyan)
     elseif o.nodetype === Comment
         printstyled(io, " <!--", color=:light_cyan)
@@ -262,9 +262,12 @@ function _show_node(io::IO, o)
     end
 end
 
-function _print_attrs(io::IO, o)
-    x = attributes(o)
-    !isnothing(x) && printstyled(io, [" $k=\"$v\"" for (k,v) in x]...; color=:light_yellow)
+function _print_attrs(io::IO, o; color=:normal)
+    attr = attributes(o)
+    isnothing(attr) && return nothing
+    for (k,v) in attr
+        printstyled(io, ' ', k, '=', '"', v, '"'; color)
+    end
 end
 function _print_n_children(io::IO, o::Node)
     n = length(children(o))

@@ -20,6 +20,26 @@ file = joinpath(@__DIR__, "nasa.xml")
 
 df = DataFrame(kind=String[], name=String[], bench=BenchmarkTools.Trial[])
 
+
+#-----------------------------------------------------------------------------# Write
+kind = "Write"
+output = tempname()
+
+name = "XML.write 2"
+@info name
+node1 = read(file, Node)
+bench = @benchmark XML.write($output, $node1)
+push!(df, (;kind, name, bench))
+
+
+name = "EzXML.writexml"
+@info name
+node2 = EzXML.readxml(file)
+bench = @benchmark EzXML.write($output, $node2)
+push!(df, (;kind, name, bench))
+
+
+
 #-----------------------------------------------------------------------------# Read
 kind = "Read"
 
@@ -99,6 +119,8 @@ push!(df, (;kind, name, bench))
 
 
 
+
+
 #-----------------------------------------------------------------------------# Plots
 function plot(df, kind)
     g = groupby(df, :kind)
@@ -109,5 +131,6 @@ function plot(df, kind)
 end
 
 plot(df, "Read")
+plot(df, "Write")
 plot(df, "Lazy Iteration")
 plot(df, "Collect Tags")
