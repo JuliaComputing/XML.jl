@@ -11,14 +11,14 @@ This package offers fast data structures for reading and writing XML files with 
 #### `Node`/`LazyNode` Interface:
 
 - `nodetype(node)   →   XML.NodeType` (an enum with one of the following values):
-    - `Document` e.g. `children...`
-    - `DTD` e.g. `<!DOCTYPE ...>`
-    - `Declaration` e.g. `<?xml attributes... ?>`
-    - `ProcessingInstruction` e.g. `<?NAME attributes... ?>`
-    - `Comment` e.g. `<!-- ... -->`
-    - `CData` e.g. `<![CData[...]]>`
-    - `Element` e.g. `<NAME attributes... > children... </NAME>`
-    - `Text` e.g. `text`
+    - `Document`: `children...`
+    - `DTD`: `<!DOCTYPE ...>`
+    - `Declaration`: `<?xml attributes... ?>`
+    - `ProcessingInstruction`: `<?NAME attributes... ?>`
+    - `Comment`: `<!-- ... -->`
+    - `CData`: `<![CData[...]]>`
+    - `Element`: `<NAME attributes... > children... </NAME>`
+    - `Text`: `text`
 - `tag(node)        →   String or Nothing`
 - `attributes(node) →   Dict{String,String} or Nothing`
 - `value(node)      →   String or Nothing`
