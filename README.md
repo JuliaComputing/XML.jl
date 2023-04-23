@@ -129,9 +129,21 @@ XML.write(node)  # String
 
 ## Performance
 
-- Comparing benchmarks (fairly) between packages is hard.
-    - The most fair comparison is between `XML.Node` and `XMLDict.xml_dict`.
-- See the `benchmarks/suite.jl` file.
+- See the `benchmarks/suite.jl` for the code to produce these results.
+- The following output was generated in a Julia session with the following `versioninfo`:
+
+```
+julia> versioninfo()
+Julia Version 1.8.5
+Commit 17cfb8e65ea (2023-01-08 06:45 UTC)
+Platform Info:
+  OS: macOS (arm64-apple-darwin21.5.0)
+  CPU: 10 × Apple M1 Pro
+  WORD_SIZE: 64
+  LIBM: libopenlibm
+  LLVM: libLLVM-13.0.1 (ORCJIT, apple-m1)
+  Threads: 1 on 8 virtual cores
+```
 
 
 ### Reading an XML File
