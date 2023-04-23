@@ -67,7 +67,10 @@ struct Raw
 end
 Raw(data::Vector{UInt8}) = Raw(RawDocument, 0, 0, 0, data)
 
-Base.read(filename::String, ::Type{Raw}) = Raw(Mmap.mmap(filename))
+Base.read(filename::String, ::Type{Raw}) = isfile(filename) ?
+    Raw(Mmap.mmap(filename)) :
+    error("File \"$filename\" does not exist.")
+
 Base.read(io::IO, ::Type{Raw}) = Raw(read(io))
 
 parse(x::AbstractString, ::Type{Raw}) = Raw(Vector{UInt8}(x))

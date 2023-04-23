@@ -133,13 +133,25 @@ XML.write(node)  # String
     - The most fair comparison is between `XML.Node` and `XMLDict.xml_dict`.
 - See the `benchmarks/suite.jl` file.
 
+
+### Reading an XML File
+
 ```
-                  XML.Raw   0.010209
-             XML.LazyNode   0.010333
-    collect(XML.LazyNode)  ■■ 75.811
-                 XML.Node  ■■■■■■■■■■■■■■■■■■■■■■■■■■ 996.321
-            EzXML.readxml  ■■■■■ 198.103
-         XMLDict.xml_dict  ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ 1207.79
-   XML.LazyNode iteration  ■ 55.5357
-       EzXML.StreamReader  ■■■■ 141.868
+       XML.LazyNode   0.012084
+           XML.Node  ■■■■■■■■■■■■■■■■■■■■■■■■■■■ 888.367
+      EzXML.readxml  ■■■■■■ 200.009
+   XMLDict.xml_dict  ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ 1350.63
+```
+
+### Lazily Iterating over Each Node
+```
+           LazyNode  ■■■■■■■■■■■■■■■■ 55.1
+ EzXML.StreamReader  ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ 142.515
+```
+
+### Collecting All Names/Tags in an XML File
+```
+       XML.LazyNode  ■■■■■■■■■■■■■■■■■■■■■■■■■■ 152.298
+ EzXML.StreamReader  ■■■■■■■■■■■■■■■■■■■■■■■■■■■■ 165.21
+      EzXML.readxml  ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ 239.197
 ```
