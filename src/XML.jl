@@ -89,7 +89,7 @@ function prev(o::LazyNode)
     n.type === RawElementClose ? prev(LazyNode(n)) : LazyNode(n)
 end
 
-#-----------------------------------------------------------------------------# Node
+#-----------------------------------------------------------------------------?de
 """
     Node(nodetype, tag, attributes, value, children)
     Node(node::Node; kw...)  # copy node with keyword overrides
@@ -135,7 +135,7 @@ end
 
 Base.read(filename::AbstractString, ::Type{Node}) = Node(read(filename, Raw))
 Base.read(io::IO, ::Type{Node}) = Node(read(io, Raw))
-Base.parse(x::AbstractString, ::Type{Node} = Node) = Node(parse(x, Raw))
+Base.parse(x::AbstractString, ::Type{Node}) = Node(parse(x, Raw))
 
 Base.setindex!(o::Node, val, i::Integer) = o.children[i] = Node(val)
 Base.push!(a::Node, b::Node) = push!(a.children, b)
@@ -210,7 +210,7 @@ end
 Base.:(==)(a::AbstractXMLNode, b::AbstractXMLNode) = nodes_equal(a, b)
 
 #-----------------------------------------------------------------------------# parse
-Base.parse(::Type{T}, str::AbstractString) where {T} = parse(str, T)
+Base.parse(::Type{T}, str::AbstractString) where {T <: AbstractXMLNode} = parse(str, T)
 
 #-----------------------------------------------------------------------------# indexing
 Base.getindex(o::Union{Raw, AbstractXMLNode}) = o
