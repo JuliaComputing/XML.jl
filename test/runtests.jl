@@ -133,7 +133,7 @@ end
         # @info "read/write/read roundtrip" name
         node = read(path, Node)
         temp = tempname() * ".xml"
-        XML.write(temp, node; indent = " ")
+        XML.write(temp, node)
         node2 = read(temp, Node)
         @test node == node2
 
