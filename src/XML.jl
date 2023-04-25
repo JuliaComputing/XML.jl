@@ -110,13 +110,9 @@ struct Node <: AbstractXMLNode
             isnothing(attributes) ? nothing : Dict(string(k) => string(v) for (k, v) in pairs(attributes)),
             isnothing(value) ? nothing : string(value),
             isnothing(children) ? nothing :
-                children isa Vector{Node} ? children : begin
-                    if any(x -> !(x isa Node), children)
-                        Base.depwarn("Providing non-Node children to a Node is deprecated.  " *
-                            "All provided children have been changed to Text(input)", :Node; force=true)
-                    end
-                    map(Node, collect(children))
-                end
+                children isa Vector{Node} ? children :
+                children isa Vector ? map(Node, children) :
+                map(Node, collect(children))
         )
     end
 end
@@ -193,8 +189,10 @@ parent(o) = missing
 next(o) = missing
 prev(o) = missing
 
-nodeinfo(o) = (; nodetype=nodetype(o), tag=tag(o), attributes=attributes(o), value=value(o), depth=depth(o))
+is_simple(o) = nodetype(o) == Element && (isnothing(attributes(o)) || isempty(attributes(o))) &&
+    length(children(o)) == 1 && nodetype(only(o)) in [Text, CData]
 
+simplevalue(o) = is_simple(o) ? value(only(o)) : error("`XML.simplevalue(o)` is only defined for simple nodes.")
 
 #-----------------------------------------------------------------------------# nodes_equal
 function nodes_equal(a, b)
@@ -219,6 +217,8 @@ Base.getindex(o::Union{Raw, AbstractXMLNode}, ::Colon) = children(o)
 Base.lastindex(o::Union{Raw, AbstractXMLNode}) = lastindex(children(o))
 
 Base.only(o::Union{Raw, AbstractXMLNode}) = only(children(o))
+
+Base.length(o::AbstractXMLNode) = length(children(o))
 
 #-----------------------------------------------------------------------------# printing
 function _show_node(io::IO, o)
@@ -281,7 +281,8 @@ write(x; kw...) = (io = IOBuffer(); write(io, x; kw...); String(take!(io)))
 
 write(filename::AbstractString, x; kw...) = open(io -> write(io, x; kw...), filename, "w")
 
-function write(io::IO, x; indent = "   ", depth=depth(x))
+function write(io::IO, x; indentsize::Int=2, depth::Union{Missing,Int}=depth(x))
+    indent = ' ' ^ indentsize
     nodetype = XML.nodetype(x)
     tag = XML.tag(x)
     value = XML.value(x)
@@ -298,12 +299,12 @@ function write(io::IO, x; indent = "   ", depth=depth(x))
         print(io, isempty(children) ? '/' : "", '>')
         if !isempty(children)
             if length(children) == 1 && XML.nodetype(only(children)) === Text
-                write(io, only(children); indent="")
+                write(io, only(children); indentsize=0)
                 print(io, "</", tag, '>')
             else
                 println(io)
                 foreach(children) do child
-                    write(io, child; indent)
+                    write(io, child; indentsize, depth = depth + 1)
                     println(io)
                 end
                 print(io, padding, "</", tag, '>')
@@ -325,7 +326,7 @@ function write(io::IO, x; indent = "   ", depth=depth(x))
         print(io, "<![CData[", value, "]]>")
     elseif nodetype === Document
         foreach(children) do child
-            write(io, child; indent)
+            write(io, child; indentsize)
             println(io)
         end
     else
