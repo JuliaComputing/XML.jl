@@ -77,7 +77,7 @@ Declaration(; attributes...)
 Document(children...)
 DTD(; attributes...)
 Element(tag, children...; attributes...)
-ProcessingInstruction(; attributes...)
+ProcessingInstruction(tag; attributes...)
 Text(value)
 ```
 
@@ -85,7 +85,7 @@ Text(value)
 
 A lazy data structure that just keeps track of the position in the raw data (`Vector{UInt8}`) to read from.
 
-- Iteration in depth first search (DFS) order.  This is the natural order in which you would visit XML nodes by reading an XML document from top to bottom.
+- You can iterate over a `LazyNode` to "read" through an XML file:
 
 ```julia
 doc = read(filename, LazyNode)
