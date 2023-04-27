@@ -3,12 +3,15 @@ module XML
 using Mmap
 
 export
-    Node, LazyNode,  # Core Types
-    children, parent, nodetype, tag, attributes, value, depth, next, prev, # interface
-    NodeConstructors  # convenience functions for creating Nodes
+    # Core Types:
+    Node, LazyNode,
+    # Interface:
+    children, nodetype, tag, attributes, value,
+    # Extended Interface for LazyNode:
+    parent, depth, next, prev
 
 #-----------------------------------------------------------------------------# escape/unescape
-# only used by Text nodes
+# only used by Text nodes during `XML.write`
 const escape_chars = ('&' => "&amp;", '<' => "&lt;", '>' => "&gt;", "'" => "&apos;", '"' => "&quot;")
 escape(x::AbstractString) = replace(x, escape_chars...)
 unescape(x::AbstractString) = replace(x, reverse.(escape_chars)...)
@@ -24,6 +27,17 @@ unescape(x::AbstractString) = replace(x, reverse.(escape_chars)...)
     - CData                     # <![CData[...]]>
     - Element                   # <NAME attributes... > children... </NAME>
     - Text                      # text
+
+NodeTypes can be used to construct XML.Nodes:
+
+    Document(children...)
+    DTD(value)
+    Declaration(; attributes)
+    ProcessingInstruction(tag, attributes)
+    Comment(text)
+    CData(text)
+    Element(tag, children...; attributes)
+    Text(text)
 """
 @enum(NodeType, CData, Comment, Declaration, Document, DTD, Element, ProcessingInstruction, Text)
 
@@ -95,7 +109,7 @@ end
     Node(node::Node; kw...)  # copy node with keyword overrides
     Node(node::LazyNode)  # un-lazy the LazyNode
 
-A representation of an XML DOM node.  For convenience constructors, see the `XML.NodeConstructors` module.
+A representation of an XML DOM node.  For simpler construction, use `(::NodeType)(args...)`
 """
 struct Node <: AbstractXMLNode
     nodetype::NodeType
