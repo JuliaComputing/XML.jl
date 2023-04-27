@@ -163,4 +163,9 @@ end
     @test nodetype(doc[end][2]) == XML.Text
     @test value(doc[end][1]) == "cdata"
     @test value(doc[end][2]) == "text"
+
+    #set/get index for attributes
+    o = doc[end]
+    o["id"] = 1
+    @test o["id"] == "1"
 end

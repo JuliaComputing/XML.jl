@@ -156,6 +156,7 @@ function Base.setindex!(o::Node, val, key::AbstractString)
     end
     o.attributes[key] = string(val)
 end
+Base.getindex(o::Node, val::AbstractString) = isnothing(o.attributes) ? nothing : get(o.attributes, val, nothing)
 
 Base.show(io::IO, o::Node) = _show_node(io, o)
 
