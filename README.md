@@ -16,7 +16,7 @@ This package offers fast data structures for reading and writing XML files with 
 - `value(node)        →   String or Nothing`
 - `children(node)     →   Vector{typeof(node)}`
 - `is_simple(node)    →   Bool (whether node is simple .e.g. <tag>item</tag>)`
-- `simplevalue(node)  →   Return the `value` of the only child (e.g. "item" from <tag>item</tag>)`
+- ```simplevalue(node)  →   Return the `value` of the only child (e.g. "item" from <tag>item</tag>)```
 
 ### Extended Interface for `LazyNode`
 
