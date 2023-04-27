@@ -150,6 +150,13 @@ Base.parse(x::AbstractString, ::Type{Node}) = Node(parse(x, Raw))
 Base.setindex!(o::Node, val, i::Integer) = o.children[i] = Node(val)
 Base.push!(a::Node, b::Node) = push!(a.children, b)
 
+function Base.setindex!(o::Node, val, key::AbstractString)
+    if isnothing(o.attributes)
+        o.attributes = Dict{String,String}()
+    end
+    o.attributes[key] = string(val)
+end
+
 Base.show(io::IO, o::Node) = _show_node(io, o)
 
 #-----------------------------------------------------------------------------# Node Constructors

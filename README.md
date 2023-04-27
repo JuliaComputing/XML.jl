@@ -64,8 +64,13 @@ doc[end][2]  # Second child of root
 # Add a child:
 push!(parent::Node, child::Node)
 
+
 # Replace a child:
 parent[2] = child
+
+
+# Add/change an attribute:
+node["key"] = value
 ```
 
 - **XML** defines `(::NodeType)(args...; kw...)` for more convenient syntax in creating `Node`s, e.g.:
