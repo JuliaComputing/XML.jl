@@ -6,7 +6,7 @@ export
     # Core Types:
     Node, LazyNode,
     # Interface:
-    children, nodetype, tag, attributes, value,
+    children, nodetype, tag, attributes, value, is_simple, simplevalue,
     # Extended Interface for LazyNode:
     parent, depth, next, prev
 
