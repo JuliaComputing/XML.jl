@@ -8,6 +8,8 @@
 
 This package offers fast data structures for reading and writing XML files with a consistent interface:
 
+<br>
+
 ### `Node`/`LazyNode` Interface:
 
 - `nodetype(node)     →   XML.NodeType` (an enum type):
@@ -18,12 +20,16 @@ This package offers fast data structures for reading and writing XML files with 
 - `is_simple(node)    →   Bool (whether node is simple .e.g. <tag>item</tag>)`
 - ```simplevalue(node)  →   Return the `value` of the only child (e.g. "item" from <tag>item</tag>)```
 
+<br>
+
 ### Extended Interface for `LazyNode`
 
 - `depth(node)      →   Int`
 - `next(node)       →   typeof(node)`
 - `prev(node)       →   typeof(node)`
 - `parent(node)     →   typeof(node)`
+
+<br><br>
 
 # Quickstart
 
@@ -46,6 +52,8 @@ doc[end][2]  # Second child of root
 # Node Element <book id="bk102"> (6 children)
 ```
 
+<br><br>
+
 # Data Structures that Represent XML Nodes
 
 ## Preliminary: `NodeType`
@@ -64,6 +72,7 @@ doc[end][2]  # Second child of root
 | `Element` | `<tag attributes... > children... </NAME>` | `Element(tag, children...; attrs...)`
 | `Text` | the `text` part of `<tag>text</tag>` | `Text(text)`
 
+<br>
 
 ## `Node`: Probably What You're Looking For
 
@@ -85,6 +94,7 @@ node["key"] = value
 node["key"]
 ```
 
+<br>
 
 ## `XML.LazyNode`: For Fast Iteration through an XML File
 
@@ -105,8 +115,9 @@ foreach(println, doc)
 # ⋮
 ```
 
+<br><br>
 
-## Reading
+# Reading
 
 ```julia
 # Reading from file:
@@ -119,7 +130,9 @@ parse(LazyNode, str)
 
 ```
 
-## Writing
+<br><br>
+
+# Writing
 
 ```julia
 XML.write(filename::String, node)  # write to file
@@ -130,9 +143,9 @@ XML.write(node)  # String
 ```
 
 
+<br><br>
 
-
-## Performance
+# Performance
 
 - XML.jl performs comparatively to [EzXML.jl](https://github.com/JuliaIO/EzXML.jl), which wraps the C library [libxml2](https://gitlab.gnome.org/GNOME/libxml2/-/wikis/home).
 - See the `benchmarks/suite.jl` for the code to produce these results.
