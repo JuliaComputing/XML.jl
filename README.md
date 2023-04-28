@@ -26,10 +26,12 @@ simplevalue(node)  →   e.g. `"item"` from `<tag>item</tag>`)
 
 ### Extended Interface for `LazyNode`
 
-- `depth(node)      →   Int`
-- `next(node)       →   typeof(node)`
-- `prev(node)       →   typeof(node)`
-- `parent(node)     →   typeof(node)`
+```
+depth(node)      →   Int
+next(node)       →   typeof(node)
+prev(node)       →   typeof(node)
+parent(node)     →   typeof(node)
+```
 
 <br><br>
 
