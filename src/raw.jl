@@ -260,6 +260,9 @@ function next(o::Raw)
             elseif c3 === 'D'
                 type = RawDTD
                 j = findnext(==(UInt8('>')), data, i)
+                while sum(==(UInt8('>')), data[i:j]) != sum(==(UInt8('<')), data[i:j])
+                    j = findnext(==(UInt8('>')), data, j + 1)
+                end
             end
         elseif c2 === '?'
             if get_name(data, i + 2)[1] == "xml"

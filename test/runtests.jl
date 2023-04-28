@@ -169,3 +169,32 @@ end
     o["id"] = 1
     @test o["id"] == "1"
 end
+
+#-----------------------------------------------------------------------------# Issues
+@testset "Issues" begin
+    #12
+    s = """
+    <?xml version="1.0" encoding="UTF-8"?>
+
+    <!DOCTYPE note [
+    <!ENTITY nbsp "&#xA0;">
+    <!ENTITY writer "Writer: Donald Duck.">
+    <!ENTITY copyright "Copyright: W3Schools.">
+    ]>
+
+    <note>
+    <to>Tove</to>
+    <from>Jani</from>
+    <heading>Reminder</heading>
+    <body>Don't forget me this weekend!</body>
+    <footer>&writer;&nbsp;&copyright;</footer>
+    </note>
+    """
+
+    doc = parse(s, Node)
+    @test value(doc[2]) == """note [
+        <!ENTITY nbsp "&#xA0;">
+        <!ENTITY writer "Writer: Donald Duck.">
+        <!ENTITY copyright "Copyright: W3Schools.">
+        ]"""
+end
