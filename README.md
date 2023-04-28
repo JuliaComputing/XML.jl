@@ -12,13 +12,15 @@ This package offers fast data structures for reading and writing XML files with 
 
 ### `Node`/`LazyNode` Interface:
 
-- `nodetype(node)     →   XML.NodeType` (an enum type):
-- `tag(node)          →   String or Nothing`
-- `attributes(node)   →   Dict{String,String} or Nothing`
-- `value(node)        →   String or Nothing`
-- `children(node)     →   Vector{typeof(node)}`
-- `is_simple(node)    →   Bool (whether node is simple .e.g. <tag>item</tag>)`
-- ```simplevalue(node)  →   Return the `value` of the only child (e.g. "item" from <tag>item</tag>)```
+```
+nodetype(node)     →   `XML.NodeType` (an enum type):
+tag(node)          →   `String` or `Nothing`
+attributes(node)   →   `Dict{String,String}` or `Nothing`
+value(node)        →   `String` or `Nothing`
+children(node)     →   `Vector{typeof(node)}`
+is_simple(node)    →   `Bool` (whether node is simple .e.g. `<tag>item</tag>`)
+simplevalue(node)  →   e.g. `"item"` from `<tag>item</tag>`)
+```
 
 <br>
 
