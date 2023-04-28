@@ -11,10 +11,23 @@ export
     parent, depth, next, prev
 
 #-----------------------------------------------------------------------------# escape/unescape
-# only used by Text nodes during `XML.write`
+# TODO: be smarter :
+# 1. to avoid escaping entities e.g. `&entity;`
+# 2. to avoid re-escaping already escaped entities e.g. `&amp;`
 const escape_chars = ('&' => "&amp;", '<' => "&lt;", '>' => "&gt;", "'" => "&apos;", '"' => "&quot;")
-escape(x::AbstractString) = replace(x, escape_chars...)
+
 unescape(x::AbstractString) = replace(x, reverse.(escape_chars)...)
+
+# requires special handling of `&` to avoid double-escaping
+function escape(x::String)
+    s = replace(x,
+        r"&(?!(?:amp|lt|gt|quot|apos);)" => "&amp;",
+        '<' => "&lt;", '>' => "&gt;",
+        '"' => "&quot;",
+        ''' => "&apos;"
+    )
+    return s
+end
 
 #-----------------------------------------------------------------------------# NodeType
 """
@@ -42,8 +55,9 @@ NodeTypes can be used to construct XML.Nodes:
 @enum(NodeType, CData, Comment, Declaration, Document, DTD, Element, ProcessingInstruction, Text)
 
 
-#-----------------------------------------------------------------------------# raw
+#-----------------------------------------------------------------------------# includes
 include("raw.jl")
+include("dtd.jl")
 
 abstract type AbstractXMLNode end
 
@@ -103,7 +117,7 @@ function prev(o::LazyNode)
     n.type === RawElementClose ? prev(LazyNode(n)) : LazyNode(n)
 end
 
-#-----------------------------------------------------------------------------?de
+#-----------------------------------------------------------------------------# Node
 """
     Node(nodetype, tag, attributes, value, children)
     Node(node::Node; kw...)  # copy node with keyword overrides
@@ -140,6 +154,17 @@ function Node(node::LazyNode)
     (;nodetype, tag, attributes, value) = node
     c = XML.children(node)
     Node(nodetype, tag, attributes, value, isempty(c) ? nothing : map(Node, c))
+end
+
+# NOT in-place for Text Nodes
+function escape!(o::Node, warn::Bool=true)
+    if o.nodetype == Text
+        warn && @warn "escape!() called on a Text Node creates a new node."
+        return Text(escape(o.value))
+    end
+    isnothing(o.children) && return o
+    map!(x -> escape!(x, false), o.children, o.children)
+    o
 end
 
 
@@ -314,7 +339,7 @@ function write(io::IO, x; indentsize::Int=2, depth::Union{Missing,Int}=depth(x))
     padding = indent ^ max(0, depth - 1)
     print(io, padding)
     if nodetype === Text
-        print(io, escape(value))
+        print(io, value)
     elseif nodetype === Element
         print(io, '<', tag)
         _print_attrs(io, x)

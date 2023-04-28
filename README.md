@@ -193,3 +193,10 @@ Platform Info:
  EzXML.StreamReader  ■■■■■■■■■■■■■■■■■■■■■■■■■■■■ 165.21
       EzXML.readxml  ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ 239.197
 ```
+
+<br>
+<br>
+
+# Possible Gotchas
+
+XML.jl doesn't escape special characters (`<`, `>`, `&`, `"`, and `'` ) for you, but it provides `XML.escape(::String)` and `XML.unescape(::String)` utility functions.

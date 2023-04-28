@@ -1,7 +1,10 @@
 using XML
-using XML: Document, Element, Declaration, Comment, CData, DTD, ProcessingInstruction, Text
+using XML: Document, Element, Declaration, Comment, CData, DTD, ProcessingInstruction, Text, escape, unescape
 using Downloads: download
 using Test
+import AbstractTrees
+
+AbstractTrees.children(x::Node) = children(x)
 
 #-----------------------------------------------------------------------------# files
 xml_spec = download("http://www.w3.org/2001/xml.xsd")
@@ -15,6 +18,15 @@ all_files = [
     "books.xml" => books,
     "example.kml" => example_kml
 ]
+
+#-----------------------------------------------------------------------------# utils
+@testset "utils" begin
+    s = "This > string < has & some \" special ' characters"
+    @test escape(s) == "This &gt; string &lt; has &amp; some &quot; special &apos; characters"
+    @test escape(escape(s)) == escape(s)
+    @test s == unescape(escape(s))
+    @test s == unescape(unescape(escape(s)))
+end
 
 #-----------------------------------------------------------------------------# Raw
 @testset "Raw tag/attributes/value" begin

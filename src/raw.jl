@@ -102,7 +102,7 @@ xml_nodes(o::Raw) = Iterators.Filter(is_node, o)
 
 #-----------------------------------------------------------------------------# get_name
 is_name_start_char(x::UInt8) = x in UInt8('A'):UInt8('Z') || x in UInt8('a'):UInt8('z') || x == UInt8('_')
-is_name_char(x::UInt8) = is_name_start_char(x) || x in UInt8('0'):UInt8('9') || x == UInt8('-') || x == UInt8('.')
+is_name_char(x::UInt8) = is_name_start_char(x) || x in UInt8('0'):UInt8('9') || x == UInt8('-') || x == UInt8('.') || x == UInt8(':')
 
 name_start(data, i) = findnext(is_name_start_char, data, i)
 name_stop(data, i) = findnext(!is_name_char, data, i) - 1
@@ -176,7 +176,7 @@ Return the value of `Text`, `CData`, `Comment`, or `DTD` nodes.
 """
 function value(o::Raw)
     if o.type === RawText
-        unescape(String(o))
+        String(o)
     elseif o.type === RawCData
         String(view(o.data, o.pos + length("<![CData[") : o.pos + o.len - 3))
     elseif o.type === RawComment
