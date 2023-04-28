@@ -13,9 +13,9 @@ This package offers fast data structures for reading and writing XML files with 
 ### `Node`/`LazyNode` Interface:
 
 ```
-nodetype(node)      →   XML.NodeType (an enum type):
+nodetype(node)      →   XML.NodeType (an enum type)
 tag(node)           →   String or Nothing
-attributes(node)    →   Dict{String,String} or Nothing
+attributes(node)    →   Dict{String, String} or Nothing
 value(node)         →   String or Nothing
 children(node)      →   Vector{typeof(node)}
 is_simple(node)     →   Bool (whether node is simple .e.g. <tag>item</tag>)
@@ -203,6 +203,6 @@ Platform Info:
 
 # Possible Gotchas
 
-- XML.jl doesn't automatically escape special characters (`<`, `>`, `&`, `"`, and `'` ) for you.
-  - Use the `XML.escape(::String)` and `XML.unescape(::String)` utility functions to convert strings back and forth.
-  - You can also use `XML.escape!(::Node)` which will escape the strings of all child `Text` nodes.
+- XML.jl doesn't automatically escape special characters (`<`, `>`, `&`, `"`, and `'` ) for you.  However, we provide utility functions for doing the conversions back and forth:
+  - `XML.escape(::String)` and `XML.unescape(::String)`
+  - `XML.escape!(::Node)` and `XML.unescape!(::Node)`.
