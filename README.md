@@ -199,4 +199,6 @@ Platform Info:
 
 # Possible Gotchas
 
-XML.jl doesn't escape special characters (`<`, `>`, `&`, `"`, and `'` ) for you, but it provides `XML.escape(::String)` and `XML.unescape(::String)` utility functions.
+- XML.jl doesn't automatically escape special characters (`<`, `>`, `&`, `"`, and `'` ) for you.
+  - Use the `XML.escape(::String)` and `XML.unescape(::String)` utility functions to convert strings back and forth.
+  - You can also use `XML.escape!(::Node)` which will escape the strings of all child `Text` nodes.

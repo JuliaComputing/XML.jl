@@ -166,6 +166,15 @@ function escape!(o::Node, warn::Bool=true)
     map!(x -> escape!(x, false), o.children, o.children)
     o
 end
+function unescape!(o::Node, warn::Bool=true)
+    if o.nodetype == Text
+        warn && @warn "unescape!() called on a Text Node creates a new node."
+        return Text(unescape(o.value))
+    end
+    isnothing(o.children) && return o
+    map!(x -> unescape!(x, false), o.children, o.children)
+    o
+end
 
 
 Base.read(filename::AbstractString, ::Type{Node}) = Node(read(filename, Raw))

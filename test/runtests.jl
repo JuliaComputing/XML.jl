@@ -19,13 +19,22 @@ all_files = [
     "example.kml" => example_kml
 ]
 
-#-----------------------------------------------------------------------------# utils
-@testset "utils" begin
+#-----------------------------------------------------------------------------# escaping/unescaping
+@testset "escaping/unescaping" begin
     s = "This > string < has & some \" special ' characters"
     @test escape(s) == "This &gt; string &lt; has &amp; some &quot; special &apos; characters"
     @test escape(escape(s)) == escape(s)
     @test s == unescape(escape(s))
     @test s == unescape(unescape(escape(s)))
+
+    n = Element("tag", Text(s))
+    @test XML.simplevalue(n) == s
+
+    XML.escape!(n)
+    @test XML.simplevalue(n) == escape(s)
+
+    XML.unescape!(n)
+    @test XML.simplevalue(n) == s
 end
 
 #-----------------------------------------------------------------------------# Raw
