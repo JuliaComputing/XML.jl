@@ -138,23 +138,28 @@ struct Node <: AbstractXMLNode
             isnothing(attributes) ? nothing : Dict(string(k) => string(v) for (k, v) in pairs(attributes)),
             isnothing(value) ? nothing : string(value),
             isnothing(children) ? nothing :
+                children isa Node ? [children] :
                 children isa Vector{Node} ? children :
                 children isa Vector ? map(Node, children) :
-                map(Node, collect(children))
+                children isa Tuple ? map(Node, collect(children)) :
+                [Node(children)]
         )
     end
 end
+
 Node(o::Node; kw...) = isempty(kw) ? o : Node((get(kw, x, getfield(o, x)) for x in fieldnames(Node))...)
-
-Node(data::Raw) = Node(LazyNode(data))
-
-Node(x) = Node(Text, nothing, nothing, string(x), nothing)
 
 function Node(node::LazyNode)
     (;nodetype, tag, attributes, value) = node
     c = XML.children(node)
     Node(nodetype, tag, attributes, value, isempty(c) ? nothing : map(Node, c))
 end
+
+Node(data::Raw) = Node(LazyNode(data))
+
+# Anything that's not Vector{UInt8} or a (Lazy)Node is converted to a Text Node
+Node(x) = Node(Text, nothing, nothing, string(x), nothing)
+
 
 # NOT in-place for Text Nodes
 function escape!(o::Node, warn::Bool=true)
@@ -184,13 +189,9 @@ Base.parse(x::AbstractString, ::Type{Node}) = Node(parse(x, Raw))
 Base.setindex!(o::Node, val, i::Integer) = o.children[i] = Node(val)
 Base.push!(a::Node, b::Node) = push!(a.children, b)
 
-function Base.setindex!(o::Node, val, key::AbstractString)
-    if isnothing(o.attributes)
-        o.attributes = Dict{String,String}()
-    end
-    o.attributes[key] = string(val)
-end
-Base.getindex(o::Node, val::AbstractString) = isnothing(o.attributes) ? nothing : get(o.attributes, val, nothing)
+Base.setindex!(o::Node, val, key::AbstractString) = (o.attributes[key] = string(val))
+Base.getindex(o::Node, val::AbstractString) = o.attributes[val]
+Base.haskey(o::Node, key::AbstractString) = isnothing(o.attributes) ? false : haskey(o.attributes, key)
 
 Base.show(io::IO, o::Node) = _show_node(io, o)
 
@@ -367,7 +368,7 @@ function write(io::IO, x; indentsize::Int=2, depth::Union{Missing,Int}=depth(x))
             end
         end
     elseif nodetype === DTD
-        print(io, "<!DOCTYPE", value, '>')
+        print(io, "<!DOCTYPE ", value, '>')
     elseif nodetype === Declaration
         print(io, "<?xml")
         _print_attrs(io, x)

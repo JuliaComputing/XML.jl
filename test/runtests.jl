@@ -7,17 +7,13 @@ import AbstractTrees
 AbstractTrees.children(x::Node) = children(x)
 
 #-----------------------------------------------------------------------------# files
-xml_spec = download("http://www.w3.org/2001/xml.xsd")
-kml_spec = download("http://schemas.opengis.net/kml/2.2.0/ogckml22.xsd")
-books = "books.xml"
-example_kml = "example.kml"
+xml_xsd = joinpath("data", "xml.xsd")
+kml_xsd = joinpath("data", "kml.xsd")
+books_xml = joinpath("data", "books.xml")
+example_kml = joinpath("data", "example.kml")
+simple_dtd = joinpath("data", "simple_dtd.xml")
 
-all_files = [
-    "XML Spec" => xml_spec,
-    "KML Spec" => kml_spec,
-    "books.xml" => books,
-    "example.kml" => example_kml
-]
+all_files = [xml_xsd, kml_xsd, books_xml, example_kml, simple_dtd]
 
 #-----------------------------------------------------------------------------# escaping/unescaping
 @testset "escaping/unescaping" begin
@@ -37,6 +33,21 @@ all_files = [
     @test XML.simplevalue(n) == s
 end
 
+#-----------------------------------------------------------------------------# DTD
+# @testset "DTDBody and friends" begin
+#     s = read(simple_dtd, String)
+#     data = read(simple_dtd)
+
+#     dtd = XML.DTDBody(data)
+#     dtd2 = parse(s, XML.DTDBody)
+
+#     @test length(dtd.elements) == length(dtd2.elements) == 0
+#     @test length(dtd.attributes) == length(dtd2.attributes) == 0
+#     @test length(dtd.entities) == length(dtd2.entities) == 3
+
+#     o = read("data/tv.dtd", XML.DTDBody)
+# end
+
 #-----------------------------------------------------------------------------# Raw
 @testset "Raw tag/attributes/value" begin
     examples = [
@@ -45,13 +56,11 @@ end
             tag=nothing,
             attributes=nothing,
             value="html"),
-
         (xml = "<?xml version=\"1.0\" key=\"value\"?>",
             nodetype = Declaration,
             tag=nothing,
             attributes=Dict("version" => "1.0", "key" => "value"),
             value=nothing),
-
         (xml = "<tag _id=\"1\", x=\"abc\" />",
             nodetype = Element,
             tag="tag",
@@ -62,7 +71,6 @@ end
             tag=nothing,
             attributes=nothing,
             value=" comment "),
-
         (xml = "<![CData[cdata test]]>",
             nodetype = CData,
             tag=nothing,
@@ -80,10 +88,9 @@ end
 end
 
 @testset "Raw with books.xml" begin
-    file = "books.xml"
-    data = read(file, XML.Raw)
+    data = read(books_xml, XML.Raw)
     doc = collect(data)
-    @test length(doc) > countlines(file)
+    @test length(doc) > countlines(books_xml)
     # Check that the first 5 lines are correct
     first_5_lines = [
         XML.RawDeclaration => """<?xml version="1.0"?>""",
@@ -150,22 +157,22 @@ end
 
 #-----------------------------------------------------------------------------# roundtrip
 @testset "read/write/read roundtrip" begin
-    for (name, path) = all_files
-        # @info "read/write/read roundtrip" name
+    for path in all_files
         node = read(path, Node)
         temp = tempname() * ".xml"
         XML.write(temp, node)
         node2 = read(temp, Node)
         @test node == node2
 
-        # For debugging:
-        # for (a,b) in zip(AbstractTrees.Leaves(node), AbstractTrees.Leaves(node2))
-        #     if a != b
-        #         @info a
-        #         @info b
-        #         error()
-        #     end
-        # end
+        #For debugging:
+        for (a,b) in zip(AbstractTrees.Leaves(node), AbstractTrees.Leaves(node2))
+            if a != b
+                @info path
+                @info a
+                @info b
+                error()
+            end
+        end
     end
 end
 
@@ -193,27 +200,17 @@ end
 
 #-----------------------------------------------------------------------------# Issues
 @testset "Issues" begin
-    #12
+    #12: DTD content was cut short
     s = """
-    <?xml version="1.0" encoding="UTF-8"?>
-
     <!DOCTYPE note [
     <!ENTITY nbsp "&#xA0;">
     <!ENTITY writer "Writer: Donald Duck.">
     <!ENTITY copyright "Copyright: W3Schools.">
     ]>
-
-    <note>
-    <to>Tove</to>
-    <from>Jani</from>
-    <heading>Reminder</heading>
-    <body>Don't forget me this weekend!</body>
-    <footer>&writer;&nbsp;&copyright;</footer>
-    </note>
     """
 
     doc = parse(s, Node)
-    @test value(doc[2]) == """note [
+    @test value(only(doc)) == """note [
         <!ENTITY nbsp "&#xA0;">
         <!ENTITY writer "Writer: Donald Duck.">
         <!ENTITY copyright "Copyright: W3Schools.">

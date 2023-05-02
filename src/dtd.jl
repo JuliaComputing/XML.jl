@@ -1,3 +1,5 @@
+# This is all a work in progress
+
 #-----------------------------------------------------------------------------# position_after
 function position_after(needle::Vector{UInt8}, haystack::Vector{UInt8}, i)
     x = findnext(needle, haystack, i)
@@ -5,8 +7,6 @@ function position_after(needle::Vector{UInt8}, haystack::Vector{UInt8}, i)
 end
 
 position_after(needle::String, haystack::Vector{UInt8}, i) = position_after(Vector{UInt8}(needle), haystack, i)
-
-
 
 
 #-----------------------------------------------------------------------------# DeclaredElement
@@ -102,14 +102,13 @@ end
 
 #-----------------------------------------------------------------------------# DTDBody
 struct DTDBody
-    root::String
     elements::Vector{DeclaredElement}
     attributes::Vector{DeclaredAttribute}
     entities::Vector{DeclaredEntity}
 end
 
 function Base.show(io::IO, o::DTDBody)
-    printstyled(io, "DTDBody(root=\"", o.root, "\")\n", color=:light_cyan)
+    printstyled(io, "DTDBody\n", color=:light_cyan)
     printstyled(io, "   DeclaredElements (", length(o.elements), ")\n", color=:light_green)
     foreach(x -> println(io, "        ", x), o.elements)
     printstyled(io, "    DeclaredAttributes (", length(o.attributes), ")\n", color=:light_green)
@@ -119,14 +118,15 @@ function Base.show(io::IO, o::DTDBody)
 end
 
 
-
-function DTDBody(data::Vector{UInt8})
+function DTDBody(data::Vector{UInt8}, file = false)
+    file && @goto isfile
     i = position_after("<!DOCTYPE", data, 1)
     root, i = get_name(data, i)
 
     i = findnext(==(UInt8('[')), data, i)
     isnothing(i) && return DTDBody(root, [], [], [])
 
+    @label isfile
     elements = get_declared_elements(data)
     attributes = get_declared_attributes(data)
     entities = get_declared_entities(data)
@@ -134,7 +134,8 @@ function DTDBody(data::Vector{UInt8})
 end
 
 
-Base.read(filename::String, ::Type{DTDBody}) = DTDBody(read(filename))
-Base.read(io::IO, ::Type{DTDBody}) = Raw(read(io))
+Base.read(filename::String, ::Type{DTDBody}) = DTDBody(read(filename), true)
+Base.read(io::IO, ::Type{DTDBody}) = DTDBody(read(io), true)
+
 Base.parse(s::AbstractString, ::Type{DTDBody}) = DTDBody(Vector{UInt8}(s))
 Base.parse(::Type{DTDBody}, s::AbstractString) = parse(s, DTDBody)

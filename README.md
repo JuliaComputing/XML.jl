@@ -100,6 +100,20 @@ node["key"] = value
 node["key"]
 ```
 
+- `Node` is an immutable type.  However, you can easily create a copy with one or more field values changed by using the `Node(::Node; kw...)` constructor where `kw` are the fields you want to change.  For example:
+
+```julia
+node = XML.Element("tag", XML.Text("child"))
+
+simplevalue(node)
+# "child"
+
+node2 = Node(node, children=XML.Text("changed"))
+
+simplevalue(node2)
+# "changed"
+```
+
 <br>
 
 ## `XML.LazyNode`: For Fast Iteration through an XML File
