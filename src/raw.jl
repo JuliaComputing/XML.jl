@@ -257,7 +257,7 @@ function next(o::Raw)
             elseif c3 === '['
                 type = RawCData
                 j = findnext(Vector{UInt8}("]]>"), data, i)[end]
-            elseif c3 === 'D'
+            elseif c3 === 'D' || c3 == 'd'
                 type = RawDTD
                 j = findnext(==(UInt8('>')), data, i)
                 while sum(==(UInt8('>')), data[i:j]) != sum(==(UInt8('<')), data[i:j])
