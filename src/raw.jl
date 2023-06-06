@@ -73,7 +73,7 @@ Base.read(filename::String, ::Type{Raw}) = isfile(filename) ?
 
 Base.read(io::IO, ::Type{Raw}) = Raw(read(io))
 
-parse(x::AbstractString, ::Type{Raw}) = Raw(Vector{UInt8}(x))
+Base.parse(x::AbstractString, ::Type{Raw}) = Raw(Vector{UInt8}(x))
 
 # Mostly for debugging
 Base.peek(o::Raw, n::Int) = String(@view(o.data[o.pos + o.len + 1:min(end, o.pos + o.len + n + 1)]))

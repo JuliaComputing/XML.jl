@@ -209,7 +209,7 @@ end
     ]>
     """
 
-    doc = parse(s, Node)
+    doc = parse(Node, s)
     @test value(only(doc)) == """note [
         <!ENTITY nbsp "&#xA0;">
         <!ENTITY writer "Writer: Donald Duck.">
