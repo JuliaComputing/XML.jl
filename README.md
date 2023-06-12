@@ -17,7 +17,7 @@ This package offers fast data structures for reading and writing XML files with 
 ```
 nodetype(node)      →   XML.NodeType (an enum type)
 tag(node)           →   String or Nothing
-attributes(node)    →   Dict{String, String} or Nothing
+attributes(node)    →   OrderedDict{String, String} or Nothing
 value(node)         →   String or Nothing
 children(node)      →   Vector{typeof(node)}
 is_simple(node)     →   Bool (whether node is simple .e.g. <tag>item</tag>)

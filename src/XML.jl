@@ -1,6 +1,7 @@
 module XML
 
 using Mmap
+using OrderedCollections: OrderedDict
 
 export
     # Core Types:
@@ -71,7 +72,7 @@ A Lazy representation of an XML node.
 mutable struct LazyNode <: AbstractXMLNode
     raw::Raw
     tag::Union{Nothing, String}
-    attributes::Union{Nothing, Dict{String, String}}
+    attributes::Union{Nothing, OrderedDict{String, String}}
     value::Union{Nothing, String}
 end
 LazyNode(raw::Raw) = LazyNode(raw, nothing, nothing, nothing)
@@ -128,14 +129,14 @@ A representation of an XML DOM node.  For simpler construction, use `(::NodeType
 struct Node <: AbstractXMLNode
     nodetype::NodeType
     tag::Union{Nothing, String}
-    attributes::Union{Nothing, Dict{String, String}}
+    attributes::Union{Nothing, OrderedDict{String, String}}
     value::Union{Nothing, String}
     children::Union{Nothing, Vector{Node}}
 
     function Node(nodetype::NodeType, tag=nothing, attributes=nothing, value=nothing, children=nothing)
         new(nodetype,
             isnothing(tag) ? nothing : string(tag),
-            isnothing(attributes) ? nothing : Dict(string(k) => string(v) for (k, v) in pairs(attributes)),
+            isnothing(attributes) ? nothing : OrderedDict(string(k) => string(v) for (k, v) in pairs(attributes)),
             isnothing(value) ? nothing : string(value),
             isnothing(children) ? nothing :
                 children isa Node ? [children] :

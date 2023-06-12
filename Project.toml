@@ -5,6 +5,8 @@ version = "0.2.3"
 
 [deps]
 Mmap = "a63ad114-7e13-5084-954f-fe012c677804"
+OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 
 [compat]
 julia = "1.7"
+OrderedCollections = "1.4, 1.5"

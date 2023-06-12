@@ -52,7 +52,7 @@ Useful functions:
     - next(o::Raw) --> Raw of the next chunk (or `nothing`).
     - prev(o::Raw) --> Raw of the previous chunk (or `nothing`).
     - tag(o::Raw) --> String of the tag name (or `nothing`).
-    - attributes(o::Raw) --> Dict{String, String} of the attributes (or `nothing`).
+    - attributes(o::Raw) --> OrderedDict{String, String} of the attributes (or `nothing`).
     - value(o::Raw) --> String of the value (or `nothing`).
     - children(o::Raw) --> Vector{Raw} of the children (or `nothing`).
     - parent(o::Raw) --> Raw of the parent (or `nothing`)
@@ -118,7 +118,7 @@ end
 function get_attributes(data, i, j)
     i = name_start(data, i)
     i > j && return nothing
-    out = Dict{String, String}()
+    out = OrderedDict{String, String}()
     while !isnothing(i) && i < j
         key, i = get_name(data, i)
         # get quotechar the value is wrapped in (either ' or ")
@@ -152,7 +152,7 @@ function tag(o::Raw)
 end
 
 """
-    attributes(node) --> Dict{String, String} or Nothing
+    attributes(node) --> OrderedDict{String, String} or Nothing
 
 Return the attributes of `Element`, `Declaration`, or `ProcessingInstruction` nodes.
 """

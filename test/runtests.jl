@@ -1,5 +1,5 @@
 using XML
-using XML: Document, Element, Declaration, Comment, CData, DTD, ProcessingInstruction, Text, escape, unescape
+using XML: Document, Element, Declaration, Comment, CData, DTD, ProcessingInstruction, Text, escape, unescape, OrderedDict
 using Downloads: download
 using Test
 import AbstractTrees
@@ -200,7 +200,7 @@ end
 
 #-----------------------------------------------------------------------------# Issues
 @testset "Issues" begin
-    #12: DTD content was cut short
+    # https://github.com/JuliaComputing/XML.jl/issues/12: DTD content was cut short
     s = """
     <!DOCTYPE note [
     <!ENTITY nbsp "&#xA0;">
@@ -210,9 +210,10 @@ end
     """
 
     doc = parse(Node, s)
-    @test value(only(doc)) == """note [
-        <!ENTITY nbsp "&#xA0;">
-        <!ENTITY writer "Writer: Donald Duck.">
-        <!ENTITY copyright "Copyright: W3Schools.">
-        ]"""
+    @test value(only(doc)) == s[11:end-2]  # note [...]
+
+    # https://github.com/JuliaComputing/XML.jl/issues/14 (Sorted Attributes)
+    kw = NamedTuple(OrderedDict(Symbol(k) => Int(k) for k in 'a':'z'))
+    xyz  = XML.Element("point"; kw...)
+    @test collect(keys(attributes(xyz))) == string.(collect('a':'z'))
 end
