@@ -12,23 +12,9 @@ export
     parent, depth, next, prev
 
 #-----------------------------------------------------------------------------# escape/unescape
-# TODO: be smarter :
-# 1. to avoid escaping entities e.g. `&entity;`
-# 2. to avoid re-escaping already escaped entities e.g. `&amp;`
 const escape_chars = ('&' => "&amp;", '<' => "&lt;", '>' => "&gt;", "'" => "&apos;", '"' => "&quot;")
-
 unescape(x::AbstractString) = replace(x, reverse.(escape_chars)...)
-
-# requires special handling of `&` to avoid double-escaping
-function escape(x::String)
-    s = replace(x,
-        r"&(?!(?:amp|lt|gt|quot|apos);)" => "&amp;",
-        '<' => "&lt;", '>' => "&gt;",
-        '"' => "&quot;",
-        ''' => "&apos;"
-    )
-    return s
-end
+escape(x::String) = replace(x, r"&(?=\s)" => "&amp;", escape_chars[2:end]...)
 
 #-----------------------------------------------------------------------------# NodeType
 """
