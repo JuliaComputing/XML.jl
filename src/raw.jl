@@ -235,7 +235,9 @@ would visit nodes by reading top-down through an XML file.  Not defined for `XML
 """
 function next(o::Raw)
     i = o.pos + o.len + 1
-    (; depth, data, type) = o
+    depth = o.depth
+    data = o.data
+    type = o.type
     i = findnext(!isspace, data, i)  # skip insignificant whitespace
     isnothing(i) && return nothing
     if type === RawElementOpen || type === RawDocument
@@ -294,7 +296,9 @@ end
 Return the previous node in the document during depth-first traversal.  Not defined for `XML.Node`.
 """
 function prev(o::Raw)
-    (; depth, data, type) = o
+    depth = o.depth
+    data = o.data
+    type = o.type
     type === RawDocument && return nothing
     j = o.pos - 1
     j = findprev(!isspace, data, j)  # skip insignificant whitespace
