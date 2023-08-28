@@ -13,8 +13,20 @@ export
 
 #-----------------------------------------------------------------------------# escape/unescape
 const escape_chars = ('&' => "&amp;", '<' => "&lt;", '>' => "&gt;", "'" => "&apos;", '"' => "&quot;")
-unescape(x::AbstractString) = replace(x, reverse.(escape_chars)...)
-escape(x::String) = replace(x, r"&(?=\s)" => "&amp;", escape_chars[2:end]...)
+function unescape(x::AbstractString)
+    result = x
+    for (pat, r) in reverse.(escape_chars)
+        result = replace(result, pat => r)
+    end
+    return result
+end
+function escape(x::String)
+    result = replace(x, r"&(?=\s)" => "&amp;")
+    for (pat, r) in escape_chars[2:end]
+        result = replace(result, pat => r)
+    end
+    return result
+end
 
 #-----------------------------------------------------------------------------# NodeType
 """
@@ -137,7 +149,10 @@ end
 Node(o::Node; kw...) = isempty(kw) ? o : Node((get(kw, x, getfield(o, x)) for x in fieldnames(Node))...)
 
 function Node(node::LazyNode)
-    (;nodetype, tag, attributes, value) = node
+    nodetype = node.nodetype
+    tag = node.tag
+    attributes = node.attributes
+    value = node.value
     c = XML.children(node)
     Node(nodetype, tag, attributes, value, isempty(c) ? nothing : map(Node, c))
 end
