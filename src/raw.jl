@@ -10,7 +10,7 @@
     - RawElementOpen            # <NAME attributes... >
     - RawElementClose           # </NAME>
     - RawElementSelfClosed     # <NAME attributes... />
-    - RawDocument                # Something to initilize with (not really used)
+    - RawDocument                # Something to initialize with (not really used)
 """
 @enum(RawType, RawDocument, RawText, RawComment, RawCData, RawProcessingInstruction,
     RawDeclaration, RawDTD, RawElementOpen, RawElementClose, RawElementSelfClosed)
