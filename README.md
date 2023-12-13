@@ -42,7 +42,7 @@ parent(node)        →   typeof(node)
 ```julia
 using XML
 
-filename = joinpath(dirname(pathof(XML)), "..", "test", "books.xml")
+filename = joinpath(dirname(pathof(XML)), "..", "test", "data", "books.xml")
 
 doc = read(filename, Node)
 
