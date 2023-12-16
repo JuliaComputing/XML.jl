@@ -83,7 +83,6 @@ doc[end][2]  # Second child of root
 ## `Node`: Probably What You're Looking For
 
 - `read`-ing a `Node` loads the entire XML DOM in memory.
-- **This is what you would use to build an XML document programmatically.**
 - See the table above for convenience constructors.
 - `Node`s have some additional methods that aid in construction/mutation:
 
@@ -112,6 +111,24 @@ node2 = Node(node, children=XML.Text("changed"))
 
 simplevalue(node2)
 # "changed"
+```
+
+### Writing `Element` `Node`s with `XML.h`
+
+Similar to [Cobweb.jl](https://github.com/JuliaComputing/Cobweb.jl#-creating-nodes-with-cobwebh), `XML.h` enables you to write elements with a simpler syntax:
+
+```julia
+using XML: h
+
+julia> node = h.parent(
+         h.child("content", id="my id")
+       )
+# Node Element <parent> (1 child)
+
+julia> XML.write(node)
+# <parent>
+#   <child id=\"my id\">content</child>
+# </parent>
 ```
 
 <br>
@@ -173,45 +190,47 @@ XML.write(node)  # String
 
 ```
 julia> versioninfo()
-Julia Version 1.8.5
-Commit 17cfb8e65ea (2023-01-08 06:45 UTC)
+Julia Version 1.9.4
+Commit 8e5136fa297 (2023-11-14 08:46 UTC)
+Build Info:
+  Official https://julialang.org/ release
 Platform Info:
-  OS: macOS (arm64-apple-darwin21.5.0)
+  OS: macOS (arm64-apple-darwin22.4.0)
   CPU: 10 × Apple M1 Pro
   WORD_SIZE: 64
   LIBM: libopenlibm
-  LLVM: libLLVM-13.0.1 (ORCJIT, apple-m1)
-  Threads: 1 on 8 virtual cores
+  LLVM: libLLVM-14.0.6 (ORCJIT, apple-m1)
+  Threads: 8 on 8 virtual cores
 ```
 
 
 ### Reading an XML File
 
 ```
-       XML.LazyNode   0.012084
-           XML.Node  ■■■■■■■■■■■■■■■■■■■■■■■■■■■ 888.367
-      EzXML.readxml  ■■■■■■ 200.009
-   XMLDict.xml_dict  ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ 1350.63
+       XML.LazyNode   0.009583
+           XML.Node  ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ 1071.32
+      EzXML.readxml  ■■■■■■■■■ 284.346
+   XMLDict.xml_dict  ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ 1231.47
 ```
 
 ### Writing an XML File
 
 ```
-         Write: XML  ■■■■■■■■■■■■■■■■■■■■■■ 244.261
-       Write: EzXML  ■■■■■■■■■■ 106.953
+         Write: XML  ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ 289.638
+       Write: EzXML  ■■■■■■■■■■■■■ 93.4631
 ```
 
 ### Lazily Iterating over Each Node
 ```
-           LazyNode  ■■■■■■■■■■■■■■■■ 55.1
- EzXML.StreamReader  ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ 142.515
+           LazyNode  ■■■■■■■■■ 51.752
+ EzXML.StreamReader  ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ 226.271
 ```
 
 ### Collecting All Names/Tags in an XML File
 ```
-       XML.LazyNode  ■■■■■■■■■■■■■■■■■■■■■■■■■■ 152.298
- EzXML.StreamReader  ■■■■■■■■■■■■■■■■■■■■■■■■■■■■ 165.21
-      EzXML.readxml  ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ 239.197
+       XML.LazyNode  ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ 210.482
+ EzXML.StreamReader  ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ 276.238
+      EzXML.readxml  ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ 263.269
 ```
 
 <br>
