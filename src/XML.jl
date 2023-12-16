@@ -146,7 +146,16 @@ struct Node <: AbstractXMLNode
     end
 end
 
-Node(o::Node; kw...) = isempty(kw) ? o : Node((get(kw, x, getfield(o, x)) for x in fieldnames(Node))...)
+function Node(o::Node, x...; kw...)
+    attrs = !isnothing(kw) ?
+        merge(
+            OrderedDict(string(k) => string(v) for (k,v) in pairs(kw)),
+            isnothing(o.attributes) ? OrderedDict{String, String}() : o.attributes
+        ) :
+        o.attributes
+    children = isempty(x) ? o.children : vcat(isnothing(o.children) ? [] : o.children, collect(x))
+    Node(o.nodetype, o.tag, attrs, o.value, children)
+end
 
 function Node(node::LazyNode)
     nodetype = node.nodetype
@@ -162,6 +171,9 @@ Node(data::Raw) = Node(LazyNode(data))
 # Anything that's not Vector{UInt8} or a (Lazy)Node is converted to a Text Node
 Node(x) = Node(Text, nothing, nothing, string(x), nothing)
 
+h(tag::Union{Symbol, String}, children...; kw...) = Node(Element, tag, kw, nothing, children)
+Base.getproperty(::typeof(h), tag::Symbol) = h(tag)
+(o::Node)(children...; kw...) = Node(o, Node.(children)...; kw...)
 
 # NOT in-place for Text Nodes
 function escape!(o::Node, warn::Bool=true)

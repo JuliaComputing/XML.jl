@@ -1,5 +1,5 @@
 using XML
-using XML: Document, Element, Declaration, Comment, CData, DTD, ProcessingInstruction, Text, escape, unescape, OrderedDict
+using XML: Document, Element, Declaration, Comment, CData, DTD, ProcessingInstruction, Text, escape, unescape, OrderedDict, h
 using Downloads: download
 using Test
 import AbstractTrees
@@ -14,6 +14,13 @@ example_kml = joinpath("data", "example.kml")
 simple_dtd = joinpath("data", "simple_dtd.xml")
 
 all_files = [xml_xsd, kml_xsd, books_xml, example_kml, simple_dtd]
+
+#-----------------------------------------------------------------------------# h
+@testset "h function" begin
+    @test h.tag == XML.Element("tag")
+    @test h.tag(id="id") == XML.Element("tag"; id="id")
+    @test h.tag(1, 2, a="a", b="b") == XML.Element("tag", 1, 2; a="a", b="b")
+end
 
 #-----------------------------------------------------------------------------# escaping/unescaping
 @testset "escaping/unescaping" begin
