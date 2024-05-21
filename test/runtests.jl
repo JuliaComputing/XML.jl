@@ -31,13 +31,13 @@ end
     @test s == unescape(unescape(escape(s)))
 
     n = Element("tag", Text(s))
-    @test XML.simplevalue(n) == s
+    @test XML.simple_value(n) == s
 
     XML.escape!(n)
-    @test XML.simplevalue(n) == escape(s)
+    @test XML.simple_value(n) == escape(s)
 
     XML.unescape!(n)
-    @test XML.simplevalue(n) == s
+    @test XML.simple_value(n) == s
 end
 
 #-----------------------------------------------------------------------------# DTD

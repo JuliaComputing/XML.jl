@@ -20,90 +20,32 @@ file = joinpath(@__DIR__, "nasa.xml")
 
 df = DataFrame(kind=String[], name=String[], bench=BenchmarkTools.Trial[])
 
+macro add_benchmark(kind, name, expr...)
+    esc(:(let
+        @info string($kind, " - ", $name)
+        bench = @benchmark $(expr...)
+        push!(df, (; kind=$kind, name=$name, bench))
+    end))
+end
 
 #-----------------------------------------------------------------------------# Write
-kind = "Write"
-output = tempname()
-
-name = "XML.write 2"
-@info name
-node1 = read(file, Node)
-bench = @benchmark XML.write($output, $node1)
-push!(df, (;kind, name, bench))
-
-
-name = "EzXML.writexml"
-@info name
-node2 = EzXML.readxml(file)
-bench = @benchmark EzXML.write($output, $node2)
-push!(df, (;kind, name, bench))
-
-
+@add_benchmark "Write" "XML.write" XML.write($(tempname()), o) setup = (o = read(file, Node))
+@add_benchmark "Write" "EzXML.writexml" EzXML.write($(tempname()), o) setup = (o = EzXML.readxml(file))
 
 #-----------------------------------------------------------------------------# Read
-kind = "Read"
-
-# name = "XML.Raw"
-# @info name
-# bench = @benchmark read($file, XML.Raw)
-# push!(df, (;kind, name, bench))
-
-
-name = "XML.LazyNode"
-@info name
-bench = @benchmark read($file, LazyNode)
-push!(df, (;kind, name, bench))
-
-name = "XML.Node"
-@info name
-bench = @benchmark read($file, Node)
-push!(df, (;kind, name, bench))
-
-
-name = "EzXML.readxml"
-@info name
-bench = @benchmark EzXML.readxml($file)
-push!(df, (;kind, name, bench))
-
-
-name = "XMLDict.xml_dict"
-@info name
-bench = @benchmark XMLDict.xml_dict(read($file, String))
-push!(df, (;kind, name, bench))
-
+@add_benchmark "Read" "XML.LazyNode" read($file, LazyNode)
+@add_benchmark "Read" "XML.Node" read($file, Node)
+@add_benchmark "Read" "EzXML.readxml" EzXML.readxml($file)
+@add_benchmark "Read" "XMLDict.xml_dict" XMLDict.xml_dict(read($file, String))
 
 #-----------------------------------------------------------------------------# Lazy Iteration
-kind = "Lazy Iteration"
-
-name = "for x in read(file, LazyNode); end"
-@info name
-bench = @benchmark (for x in read($file, LazyNode); end)
-push!(df, (;kind, name, bench))
-
-
-name = "for x in open(EzXML.StreamReader, file); end"
-@info name
-bench = @benchmark (reader = open(EzXML.StreamReader, $file); for x in reader; end; close(reader))
-push!(df, (;kind, name, bench))
-
+@add_benchmark "Lazy Iteration" "LazyNode" for x in read($file, LazyNode); end
+@add_benchmark "Lazy Iteration" "EzXML.StreamReader" (reader = open(EzXML.StreamReader, $file); for x in reader; end; close(reader))
 
 #-----------------------------------------------------------------------------# Lazy Iteration: Collect Tags
-kind = "Collect Tags"
+@add_benchmark "Collect Tags" "LazyNode" [tag(x) for x in o] setup = (o = read(file, LazyNode))
+@add_benchmark "Collect Tags" "EzXML.StreamReader" [r.name for x in r if x == EzXML.READER_ELEMENT] setup=(r=open(EzXML.StreamReader, file)) teardown=(close(r))
 
-name = "via XML.LazyNode"
-@info name
-bench = @benchmark [tag(x) for x in o] setup=(o = read(file, LazyNode))
-push!(df, (;kind, name, bench))
-
-
-name = "via EzXML.StreamReader"
-@info name
-bench = @benchmark [r.name for x in r if x == EzXML.READER_ELEMENT] setup=(r=open(EzXML.StreamReader, file)) teardown=(close(r))
-push!(df, (;kind, name, bench))
-
-
-name = "via EzXML.readxml"
-@info name
 function get_tags(o::EzXML.Node)
     out = String[]
     for node in EzXML.eachelement(o)
@@ -114,18 +56,14 @@ function get_tags(o::EzXML.Node)
     end
     out
 end
-bench = @benchmark get_tags(o.root) setup=(o = EzXML.readxml(file))
-push!(df, (;kind, name, bench))
-
-
-
+@add_benchmark "Collect Tags" "EzXML.readxml" get_tags(o.root) setup=(o = EzXML.readxml(file))
 
 
 #-----------------------------------------------------------------------------# Plots
 function plot(df, kind)
     g = groupby(df, :kind)
     sub = g[(;kind)]
-    x = map(row -> "$(row.kind): $(row.name)", eachrow(sub))
+    x = map(row -> "$(row.name)", eachrow(sub))
     y = map(x -> median(x).time / 1000^2, sub.bench)
     display(barplot(x, y, title = "$kind Time (ms)", border=:none, width=50))
 end

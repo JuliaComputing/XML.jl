@@ -253,17 +253,19 @@ nodetype(o) = o.nodetype
 tag(o) = o.tag
 attributes(o) = o.attributes
 value(o) = o.value
-children(o::T) where {T} = isnothing(o.children) ? T[] : o.children
+children(o::T) where {T} = isnothing(o.children) ? () : o.children
 
-depth(o) = missing
+depth(o) = 1
 parent(o) = missing
 next(o) = missing
 prev(o) = missing
 
 is_simple(o) = nodetype(o) == Element && (isnothing(attributes(o)) || isempty(attributes(o))) &&
-    length(children(o)) == 1 && nodetype(only(o)) in [Text, CData]
+    length(children(o)) == 1 && nodetype(only(o)) in (Text, CData)
 
-simplevalue(o) = is_simple(o) ? value(only(o)) : error("`XML.simplevalue(o)` is only defined for simple nodes.")
+simple_value(o) = is_simple(o) ? value(only(o)) : error("`XML.simple_value` is only defined for simple nodes.")
+
+Base.@deprecate_binding simplevalue simple_value
 
 #-----------------------------------------------------------------------------# nodes_equal
 function nodes_equal(a, b)
@@ -293,8 +295,8 @@ Base.length(o::AbstractXMLNode) = length(children(o))
 
 #-----------------------------------------------------------------------------# printing
 function _show_node(io::IO, o)
-    !ismissing(depth(o)) && print(io, depth(o), ':')
     printstyled(io, typeof(o), ' '; color=:light_black)
+    !ismissing(depth(o)) && printstyled(io, "(depth=", depth(o), ") ", color=:light_black)
     printstyled(io, nodetype(o), ; color=:light_green)
     if o.nodetype === Text
         printstyled(io, ' ', repr(value(o)))
@@ -352,13 +354,12 @@ write(x; kw...) = (io = IOBuffer(); write(io, x; kw...); String(take!(io)))
 
 write(filename::AbstractString, x; kw...) = open(io -> write(io, x; kw...), filename, "w")
 
-function write(io::IO, x; indentsize::Int=2, depth::Union{Missing,Int}=depth(x))
+function write(io::IO, x; indentsize::Int=2, depth::Int=depth(x))
     indent = ' ' ^ indentsize
     nodetype = XML.nodetype(x)
     tag = XML.tag(x)
     value = XML.value(x)
     children = XML.children(x)
-    depth = ismissing(depth) ? 1 : depth
 
     padding = indent ^ max(0, depth - 1)
     print(io, padding)

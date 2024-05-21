@@ -121,13 +121,15 @@ Similar to [Cobweb.jl](https://github.com/JuliaComputing/Cobweb.jl#-creating-nod
 using XML: h
 
 julia> node = h.parent(
-         h.child("content", id="my id")
+         h.child("first child content", id="id1"),
+         h.child("second child content", id="id2")
        )
-# Node Element <parent> (1 child)
+# Node Element <parent> (2 children)
 
-julia> XML.write(node)
+julia> print(XML.write(node))
 # <parent>
-#   <child id=\"my id\">content</child>
+#   <child id="id1">first child content</child>
+#   <child id="id2">second child content</child>
 # </parent>
 ```
 
