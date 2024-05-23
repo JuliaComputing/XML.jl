@@ -21,7 +21,7 @@ attributes(node)    →   OrderedDict{String, String} or Nothing
 value(node)         →   String or Nothing
 children(node)      →   Vector{typeof(node)}
 is_simple(node)     →   Bool (whether node is simple .e.g. <tag>item</tag>)
-simplevalue(node)   →   e.g. "item" from <tag>item</tag>)
+simple_value(node)   →   e.g. "item" from <tag>item</tag>)
 ```
 
 <br>
@@ -104,12 +104,12 @@ node["key"]
 ```julia
 node = XML.Element("tag", XML.Text("child"))
 
-simplevalue(node)
+simple_value(node)
 # "child"
 
 node2 = Node(node, children=XML.Text("changed"))
 
-simplevalue(node2)
+simple_value(node2)
 # "changed"
 ```
 

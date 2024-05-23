@@ -7,7 +7,7 @@ export
     # Core Types:
     Node, LazyNode,
     # Interface:
-    children, nodetype, tag, attributes, value, is_simple, simplevalue,
+    children, nodetype, tag, attributes, value, is_simple, simplevalue, simple_value,
     # Extended Interface for LazyNode:
     parent, depth, next, prev
 
@@ -339,7 +339,8 @@ function _print_attrs(io::IO, o; color=:normal)
     attr = attributes(o)
     isnothing(attr) && return nothing
     for (k,v) in attr
-        printstyled(io, ' ', k, '=', '"', v, '"'; color)
+        # printstyled(io, ' ', k, '=', '"', v, '"'; color)
+        print(io, ' ', k, '=', '"', v, '"')
     end
 end
 function _print_n_children(io::IO, o::Node)
