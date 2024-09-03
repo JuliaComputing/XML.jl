@@ -206,6 +206,7 @@ Base.push!(a::Node, b::Node) = push!(a.children, b)
 Base.setindex!(o::Node, val, key::AbstractString) = (o.attributes[key] = string(val))
 Base.getindex(o::Node, val::AbstractString) = o.attributes[val]
 Base.haskey(o::Node, key::AbstractString) = isnothing(o.attributes) ? false : haskey(o.attributes, key)
+Base.keys(o::Node) = isnothing(o.attributes) ? () : keys(o.attributes)
 
 Base.show(io::IO, o::Node) = _show_node(io, o)
 

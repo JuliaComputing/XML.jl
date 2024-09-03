@@ -1,16 +1,16 @@
 #-----------------------------------------------------------------------------# RawType
 """
     RawType:
-    - RawText                    # text
-    - RawComment                 # <!-- ... -->
-    - RawCData                   # <![CData[...]]>
-    - RawDeclaration             # <?xml attributes... ?>
+    - RawText                   # text
+    - RawComment                # <!-- ... -->
+    - RawCData                  # <![CData[...]]>
+    - RawDeclaration            # <?xml attributes... ?>
     - RawProcessingInstruction  # <?NAME attributes... ?>
-    - RawDTD                     # <!DOCTYPE ...>
+    - RawDTD                    # <!DOCTYPE ...>
     - RawElementOpen            # <NAME attributes... >
     - RawElementClose           # </NAME>
-    - RawElementSelfClosed     # <NAME attributes... />
-    - RawDocument                # Something to initialize with (not really used)
+    - RawElementSelfClosed      # <NAME attributes... />
+    - RawDocument               # Something to initialize with (not really used)
 """
 @enum(RawType, RawDocument, RawText, RawComment, RawCData, RawProcessingInstruction,
     RawDeclaration, RawDTD, RawElementOpen, RawElementClose, RawElementSelfClosed)

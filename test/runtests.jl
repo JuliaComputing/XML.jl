@@ -201,8 +201,10 @@ end
 
     #set/get index for attributes
     o = doc[end]
+    @test isempty(keys(o))
     o["id"] = 1
     @test o["id"] == "1"
+    @test keys(o) == keys(Dict("id" => "1"))
 end
 
 #-----------------------------------------------------------------------------# Issues
