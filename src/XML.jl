@@ -9,7 +9,9 @@ export
     # Interface:
     children, nodetype, tag, attributes, value, is_simple, simplevalue, simple_value,
     # Extended Interface for LazyNode:
-    parent, depth, next, prev
+    parent, depth, next, prev,
+    # Extension XMLJSONExt:
+    xml2dicts, xml2json
 
 #-----------------------------------------------------------------------------# escape/unescape
 const escape_chars = ('&' => "&amp;", '<' => "&lt;", '>' => "&gt;", "'" => "&apos;", '"' => "&quot;")
@@ -69,9 +71,9 @@ A Lazy representation of an XML node.
 """
 mutable struct LazyNode <: AbstractXMLNode
     raw::Raw
-    tag::Union{Nothing, String}
-    attributes::Union{Nothing, OrderedDict{String, String}}
-    value::Union{Nothing, String}
+    tag::Union{Nothing,String}
+    attributes::Union{Nothing,OrderedDict{String,String}}
+    value::Union{Nothing,String}
 end
 LazyNode(raw::Raw) = LazyNode(raw, nothing, nothing, nothing)
 
@@ -126,10 +128,10 @@ A representation of an XML DOM node.  For simpler construction, use `(::NodeType
 """
 struct Node <: AbstractXMLNode
     nodetype::NodeType
-    tag::Union{Nothing, String}
-    attributes::Union{Nothing, OrderedDict{String, String}}
-    value::Union{Nothing, String}
-    children::Union{Nothing, Vector{Node}}
+    tag::Union{Nothing,String}
+    attributes::Union{Nothing,OrderedDict{String,String}}
+    value::Union{Nothing,String}
+    children::Union{Nothing,Vector{Node}}
 
     function Node(nodetype::NodeType, tag=nothing, attributes=nothing, value=nothing, children=nothing)
         new(nodetype,
@@ -137,22 +139,22 @@ struct Node <: AbstractXMLNode
             isnothing(attributes) ? nothing : OrderedDict(string(k) => string(v) for (k, v) in pairs(attributes)),
             isnothing(value) ? nothing : string(value),
             isnothing(children) ? nothing :
-                children isa Node ? [children] :
-                children isa Vector{Node} ? children :
-                children isa Vector ? map(Node, children) :
-                children isa Tuple ? map(Node, collect(children)) :
-                [Node(children)]
+            children isa Node ? [children] :
+            children isa Vector{Node} ? children :
+            children isa Vector ? map(Node, children) :
+            children isa Tuple ? map(Node, collect(children)) :
+            [Node(children)]
         )
     end
 end
 
 function Node(o::Node, x...; kw...)
     attrs = !isnothing(kw) ?
-        merge(
-            OrderedDict(string(k) => string(v) for (k,v) in pairs(kw)),
-            isnothing(o.attributes) ? OrderedDict{String, String}() : o.attributes
-        ) :
-        o.attributes
+            merge(
+        OrderedDict(string(k) => string(v) for (k, v) in pairs(kw)),
+        isnothing(o.attributes) ? OrderedDict{String,String}() : o.attributes
+    ) :
+            o.attributes
     children = isempty(x) ? o.children : vcat(isnothing(o.children) ? [] : o.children, collect(x))
     Node(o.nodetype, o.tag, attrs, o.value, children)
 end
@@ -171,7 +173,7 @@ Node(data::Raw) = Node(LazyNode(data))
 # Anything that's not Vector{UInt8} or a (Lazy)Node is converted to a Text Node
 Node(x) = Node(Text, nothing, nothing, string(x), nothing)
 
-h(tag::Union{Symbol, String}, children...; kw...) = Node(Element, tag, kw, nothing, children)
+h(tag::Union{Symbol,String}, children...; kw...) = Node(Element, tag, kw, nothing, children)
 Base.getproperty(::typeof(h), tag::Symbol) = h(tag)
 (o::Node)(children...; kw...) = Node(o, Node.(children)...; kw...)
 
@@ -261,7 +263,7 @@ next(o) = missing
 prev(o) = missing
 
 is_simple(o) = nodetype(o) == Element && (isnothing(attributes(o)) || isempty(attributes(o))) &&
-    length(children(o)) == 1 && nodetype(only(o)) in (Text, CData)
+               length(children(o)) == 1 && nodetype(only(o)) in (Text, CData)
 
 simple_value(o) = is_simple(o) ? value(only(o)) : error("`XML.simple_value` is only defined for simple nodes.")
 
@@ -274,22 +276,22 @@ function nodes_equal(a, b)
     out &= XML.attributes(a) == XML.attributes(b)
     out &= XML.value(a) == XML.value(b)
     out &= length(XML.children(a)) == length(XML.children(b))
-    out &= all(nodes_equal(ai, bi) for (ai,bi) in zip(XML.children(a), XML.children(b)))
+    out &= all(nodes_equal(ai, bi) for (ai, bi) in zip(XML.children(a), XML.children(b)))
     return out
 end
 
 Base.:(==)(a::AbstractXMLNode, b::AbstractXMLNode) = nodes_equal(a, b)
 
 #-----------------------------------------------------------------------------# parse
-Base.parse(::Type{T}, str::AbstractString) where {T <: AbstractXMLNode} = parse(str, T)
+Base.parse(::Type{T}, str::AbstractString) where {T<:AbstractXMLNode} = parse(str, T)
 
 #-----------------------------------------------------------------------------# indexing
-Base.getindex(o::Union{Raw, AbstractXMLNode}) = o
-Base.getindex(o::Union{Raw, AbstractXMLNode}, i::Integer) = children(o)[i]
-Base.getindex(o::Union{Raw, AbstractXMLNode}, ::Colon) = children(o)
-Base.lastindex(o::Union{Raw, AbstractXMLNode}) = lastindex(children(o))
+Base.getindex(o::Union{Raw,AbstractXMLNode}) = o
+Base.getindex(o::Union{Raw,AbstractXMLNode}, i::Integer) = children(o)[i]
+Base.getindex(o::Union{Raw,AbstractXMLNode}, ::Colon) = children(o)
+Base.lastindex(o::Union{Raw,AbstractXMLNode}) = lastindex(children(o))
 
-Base.only(o::Union{Raw, AbstractXMLNode}) = only(children(o))
+Base.only(o::Union{Raw,AbstractXMLNode}) = only(children(o))
 
 Base.length(o::AbstractXMLNode) = length(children(o))
 
@@ -338,7 +340,7 @@ end
 function _print_attrs(io::IO, o; color=:normal)
     attr = attributes(o)
     isnothing(attr) && return nothing
-    for (k,v) in attr
+    for (k, v) in attr
         # printstyled(io, ' ', k, '=', '"', v, '"'; color)
         print(io, ' ', k, '=', '"', v, '"')
     end
@@ -356,13 +358,13 @@ write(x; kw...) = (io = IOBuffer(); write(io, x; kw...); String(take!(io)))
 write(filename::AbstractString, x; kw...) = open(io -> write(io, x; kw...), filename, "w")
 
 function write(io::IO, x; indentsize::Int=2, depth::Int=depth(x))
-    indent = ' ' ^ indentsize
+    indent = ' '^indentsize
     nodetype = XML.nodetype(x)
     tag = XML.tag(x)
     value = XML.value(x)
     children = XML.children(x)
 
-    padding = indent ^ max(0, depth - 1)
+    padding = indent^max(0, depth - 1)
     print(io, padding)
     if nodetype === Text
         print(io, value)
@@ -377,7 +379,7 @@ function write(io::IO, x; indentsize::Int=2, depth::Int=depth(x))
             else
                 println(io)
                 foreach(children) do child
-                    write(io, child; indentsize, depth = depth + 1)
+                    write(io, child; indentsize, depth=depth + 1)
                     println(io)
                 end
                 print(io, padding, "</", tag, '>')
@@ -406,5 +408,9 @@ function write(io::IO, x; indentsize::Int=2, depth::Int=depth(x))
         error("Unreachable case reached during XML.write")
     end
 end
+
+# Extension XMLJSONExt
+function xml2dicts end
+function xml2json end
 
 end

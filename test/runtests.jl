@@ -58,28 +58,28 @@ end
 #-----------------------------------------------------------------------------# Raw
 @testset "Raw tag/attributes/value" begin
     examples = [
-        (xml = "<!DOCTYPE html>",
-            nodetype = DTD,
+        (xml="<!DOCTYPE html>",
+            nodetype=DTD,
             tag=nothing,
             attributes=nothing,
             value="html"),
-        (xml = "<?xml version=\"1.0\" key=\"value\"?>",
-            nodetype = Declaration,
+        (xml="<?xml version=\"1.0\" key=\"value\"?>",
+            nodetype=Declaration,
             tag=nothing,
             attributes=Dict("version" => "1.0", "key" => "value"),
             value=nothing),
-        (xml = "<tag _id=\"1\", x=\"abc\" />",
-            nodetype = Element,
+        (xml="<tag _id=\"1\", x=\"abc\" />",
+            nodetype=Element,
             tag="tag",
             attributes=Dict("_id" => "1", "x" => "abc"),
             value=nothing),
-        (xml = "<!-- comment -->",
-            nodetype = Comment,
+        (xml="<!-- comment -->",
+            nodetype=Comment,
             tag=nothing,
             attributes=nothing,
             value=" comment "),
-        (xml = "<![CData[cdata test]]>",
-            nodetype = CData,
+        (xml="<![CData[cdata test]]>",
+            nodetype=CData,
             tag=nothing,
             attributes=nothing,
             value="cdata test"),
@@ -129,7 +129,7 @@ end
 
         idx = findall(next_res .!= prev_res)
 
-        for (a,b) in zip(next_res, prev_res)
+        for (a, b) in zip(next_res, prev_res)
             @test a == b
         end
     end
@@ -172,7 +172,7 @@ end
         @test node == node2
 
         #For debugging:
-        for (a,b) in zip(AbstractTrees.Leaves(node), AbstractTrees.Leaves(node2))
+        for (a, b) in zip(AbstractTrees.Leaves(node), AbstractTrees.Leaves(node2))
             if a != b
                 @info path
                 @info a
@@ -192,7 +192,7 @@ end
         ProcessingInstruction("xml-stylesheet", href="mystyle.css", type="text/css"),
         Element("root_tag", CData("cdata"), Text("text"))
     )
-    @test map(nodetype, children(doc)) == [DTD,Declaration,Comment,ProcessingInstruction,Element]
+    @test map(nodetype, children(doc)) == [DTD, Declaration, Comment, ProcessingInstruction, Element]
     @test length(children(doc[end])) == 2
     @test nodetype(doc[end][1]) == XML.CData
     @test nodetype(doc[end][2]) == XML.Text
@@ -221,6 +221,8 @@ end
 
     # https://github.com/JuliaComputing/XML.jl/issues/14 (Sorted Attributes)
     kw = NamedTuple(OrderedDict(Symbol(k) => Int(k) for k in 'a':'z'))
-    xyz  = XML.Element("point"; kw...)
+    xyz = XML.Element("point"; kw...)
     @test collect(keys(attributes(xyz))) == string.(collect('a':'z'))
 end
+
+include("JSONExt.jl")

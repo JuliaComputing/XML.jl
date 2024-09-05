@@ -1,0 +1,23 @@
+<instance
+        format="XCSP3"
+        type="CSP">
+    <variables>
+        <var id="x">0 1</var>
+        <var id="y">0 1</var>
+        <var id="z">0 1</var>
+    </variables>
+    <constraints>
+        <extension>
+            <list>x y</list>
+            <supports>(0,0) (1,1)</supports>
+        </extension>
+        <extension>
+            <list>x z</list>
+            <supports>(0,0) (1,1)</supports>
+        </extension>
+        <extension>
+            <list>y z</list>
+            <supports>(0,1) (1,0)</supports>
+        </extension>
+    </constraints>
+</instance>
