@@ -225,4 +225,6 @@ end
     @test collect(keys(attributes(xyz))) == string.(collect('a':'z'))
 end
 
-include("JSONExt.jl")
+if isdefined(Base, :get_extension)
+    include("JSONExt.jl")
+end

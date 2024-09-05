@@ -1,6 +1,6 @@
 module XMLJSONExt
 
-using JSON
+isdefined(Base, :get_extension) ? (using JSON) : (using ..JSON)
 using OrderedCollections
 using XML
 
