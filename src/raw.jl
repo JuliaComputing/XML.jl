@@ -39,11 +39,11 @@ Create an iterator over raw chunks of data in an XML file.  Each chunk of data r
     - RawComment                 # <!-- ... -->
     - RawCData                   # <![CData[...]]>
     - RawDeclaration             # <?xml attributes... ?>
-    - RawProcessingInstruction  # <?NAME attributes... ?>
+    - RawProcessingInstruction   # <?NAME attributes... ?>
     - RawDTD                     # <!DOCTYPE ...>
-    - RawElementOpen            # <NAME attributes... >
-    - RawElementClose           # </NAME>
-    - RawElementSelfClosed     # <NAME attributes... />
+    - RawElementOpen             # <NAME attributes... >
+    - RawElementClose            # </NAME>
+    - RawElementSelfClosed       # <NAME attributes... />
 
 Useful functions:
 
@@ -144,7 +144,7 @@ nodetype(o::Raw) = nodetype(o.type)
 """
     tag(node) --> String or Nothing
 
-Return the tag name of `Element` and `PROCESESSING_INSTRUCTION` nodes.
+Return the tag name of `Element` and `PROCESSING_INSTRUCTION` nodes.
 """
 function tag(o::Raw)
     o.type ∉ [RawElementOpen, RawElementClose, RawElementSelfClosed, RawProcessingInstruction] && return nothing
