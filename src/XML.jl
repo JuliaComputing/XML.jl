@@ -202,6 +202,7 @@ Base.parse(x::AbstractString, ::Type{Node}) = Node(parse(x, Raw))
 
 Base.setindex!(o::Node, val, i::Integer) = o.children[i] = Node(val)
 Base.push!(a::Node, b::Node) = push!(a.children, b)
+Base.pushfirst!(a::Node, b::Node) = pushfirst!(a.children, b)
 
 Base.setindex!(o::Node, val, key::AbstractString) = (o.attributes[key] = string(val))
 Base.getindex(o::Node, val::AbstractString) = o.attributes[val]
