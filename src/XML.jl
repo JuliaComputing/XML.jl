@@ -171,7 +171,8 @@ Node(data::Raw) = Node(LazyNode(data))
 # Anything that's not Vector{UInt8} or a (Lazy)Node is converted to a Text Node
 Node(x) = Node(Text, nothing, nothing, string(x), nothing)
 
-h(tag::Union{Symbol, String}, children...; kw...) = Node(Element, tag, kw, nothing, children)
+h(tag::Union{Symbol, String}, children...; kw...) = Node(Element, tag, length(kw)==0 ? nothing : kw, nothing, children)
+# h(tag::Union{Symbol, String}, children...; kw...) = Node(Element, tag, kw, nothing, children)
 Base.getproperty(::typeof(h), tag::Symbol) = h(tag)
 (o::Node)(children...; kw...) = Node(o, Node.(children)...; kw...)
 
@@ -240,7 +241,8 @@ function (T::NodeType)(args...; attr...)
         Node(T, nothing, nothing, only(args))
     elseif T === Element
         tag = first(args)
-        Node(T, tag, attr, nothing, args[2:end])
+        Node(T, tag, length(attr)==0 ? nothing : attr, nothing, args[2:end])
+#        Node(T, tag, attr, nothing, args[2:end])
     else
         error("Unreachable reached while trying to create a Node via (::NodeType)(args...; kw...).")
     end
