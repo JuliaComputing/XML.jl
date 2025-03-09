@@ -134,6 +134,18 @@ end
         end
     end
 
+    @testset "depth and parent" begin
+        @test XML.depth(data) == 0
+        @test isnothing(XML.parent(data))
+        @test XML.depth(doc[1]) == 1
+        @test XML.parent(doc[1]) == data
+        @test XML.depth(doc[2]) == 1
+        @test XML.depth(doc[3]) == 2
+        @test XML.parent(doc[3]) == doc[2]
+        @test XML.depth(doc[end]) == 1
+        @test XML.parent(doc[end]) == data
+    end
+
     @testset "tag/attributes/value" begin
         x = doc[1]  # <?xml version="1.0"?>
         @test XML.tag(x) === nothing
