@@ -209,13 +209,22 @@ function children(o::Raw)
 end
 
 """
+    depth(node) --> Int
+
+Return the depth of the node.  Will be `0` for `Document` nodes.  Not defined for `XML.Node`.
+"""
+function depth(o::Raw)
+    o.depth
+end
+
+"""
     parent(node) --> typeof(node), Nothing
 
 Return the parent of the node.  Will be `nothing` for `Document` nodes.  Not defined for `XML.Node`.
 """
 function parent(o::Raw)
     depth = o.depth
-    depth === 1 && return nothing
+    depth === 0 && return nothing
     p = prev(o)
     while p.depth >= depth
         p = prev(p)
