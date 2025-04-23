@@ -87,7 +87,7 @@ function Base.:(==)(a::Raw, b::Raw)
 end
 
 Base.view(o::Raw) = view(o.data, o.pos:o.pos + o.len)
-String(o::Raw) = String(view(o))
+Base.String(o::Raw) = String(view(o))
 
 Base.IteratorSize(::Type{Raw}) = Base.SizeUnknown()
 Base.eltype(::Type{Raw}) = Raw
