@@ -276,6 +276,10 @@ simple_value(o) = is_simple(o) ? value(only(o)) : error("`XML.simple_value` is o
 
 Base.@deprecate_binding simplevalue simple_value
 
+#-----------------------------------------------------------------------------# copy node
+
+Base.copy(o::AbstractXMLNode) = Node(o.nodetype, o.tag, o.attributes, o.value, isnothing(o.children) ? nothing : [Base.copy(x) for x in o.children])
+
 #-----------------------------------------------------------------------------# nodes_equal
 function nodes_equal(a, b)
     out = XML.tag(a) == XML.tag(b)

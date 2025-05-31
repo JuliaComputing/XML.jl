@@ -99,18 +99,49 @@ node["key"] = value
 node["key"]
 ```
 
-- `Node` is an immutable type.  However, you can easily create a copy with one or more field values changed by using the `Node(::Node; kw...)` constructor where `kw` are the fields you want to change.  For example:
+- `Node` is an immutable type.  However, you can easily create a simple copy using `copy(::Node)` or 
+copy with one or more changes by using the `Node(::Node, atts...; kw...)` constructor where `atts` 
+are new children to add and `kw` are the node attributes you want to add or change.  For example:
 
 ```julia
-node = XML.Element("tag", XML.Text("child"))
+julia> node = XML.Element("tag", XML.Text("child"))
+Node Element <tag> (1 child)
 
-simple_value(node)
-# "child"
+julia> simple_value(node)
+"child"
 
-node2 = Node(node, children=XML.Text("changed"))
+julia> node2 = Node(node, new_att="I'm new")
+Node Element <tag new_att="I'm new"> (1 child)
 
-simple_value(node2)
-# "changed"
+julia> node3 = Node(node2, XML.Element("new_child", child_att="I'm new too"))
+Node Element <tag new_att="I'm new"> (2 children)
+
+julia> println(XML.write(node))
+<tag>child</tag>
+
+julia> println(XML.write(node2))
+<tag new_att="I'm new">child</tag>
+
+julia> println(XML.write(node3))
+<tag new_att="I'm new">
+  child
+  <new_child child_att="I'm new too"/>
+</tag>
+
+julia> node4=copy(node3)
+Node Element <tag new_att="I'm new"> (2 children)
+
+julia> println(XML.write(node4))
+<tag new_att="I'm new">
+  child
+  <new_child child_att="I'm new too"/>
+</tag>
+
+julia> node4==node3
+true
+
+julia> node4===node3
+false
 ```
 
 ### Writing `Element` `Node`s with `XML.h`
