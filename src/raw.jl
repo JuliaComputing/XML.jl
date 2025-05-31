@@ -87,7 +87,7 @@ function Base.:(==)(a::Raw, b::Raw)
 end
 
 Base.view(o::Raw) = view(o.data, o.pos:o.pos + o.len)
-String(o::Raw) = String(view(o))
+Base.String(o::Raw) = String(view(o))
 
 Base.IteratorSize(::Type{Raw}) = Base.SizeUnknown()
 Base.eltype(::Type{Raw}) = Raw
@@ -209,13 +209,22 @@ function children(o::Raw)
 end
 
 """
+    depth(node) --> Int
+
+Return the depth of the node.  Will be `0` for `Document` nodes.  Not defined for `XML.Node`.
+"""
+function depth(o::Raw)
+    o.depth
+end
+
+"""
     parent(node) --> typeof(node), Nothing
 
 Return the parent of the node.  Will be `nothing` for `Document` nodes.  Not defined for `XML.Node`.
 """
 function parent(o::Raw)
     depth = o.depth
-    depth === 1 && return nothing
+    depth === 0 && return nothing
     p = prev(o)
     while p.depth >= depth
         p = prev(p)

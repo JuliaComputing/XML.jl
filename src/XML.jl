@@ -264,7 +264,7 @@ attributes(o) = o.attributes
 value(o) = o.value
 children(o::T) where {T} = isnothing(o.children) ? () : o.children
 
-depth(o) = 1
+depth(o) = missing
 parent(o) = missing
 next(o) = missing
 prev(o) = missing
@@ -364,7 +364,7 @@ write(x; kw...) = (io = IOBuffer(); write(io, x; kw...); String(take!(io)))
 
 write(filename::AbstractString, x; kw...) = open(io -> write(io, x; kw...), filename, "w")
 
-function write(io::IO, x; indentsize::Int=2, depth::Int=depth(x))
+function write(io::IO, x; indentsize::Int=2, depth::Int=1)
     indent = ' ' ^ indentsize
     nodetype = XML.nodetype(x)
     tag = XML.tag(x)
