@@ -174,6 +174,16 @@ end
     end
 end
 
+#-----------------------------------------------------------------------------# copy
+@testset "Copy node" begin
+    for path in all_files
+        node = read(path, Node)
+        node2 = copy(node)
+        @test node == node2
+        @test node2==deepcopy(node)
+    end
+end
+
 #-----------------------------------------------------------------------------# roundtrip
 @testset "read/write/read roundtrip" begin
     for path in all_files
