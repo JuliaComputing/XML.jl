@@ -99,18 +99,22 @@ node["key"] = value
 node["key"]
 ```
 
-- `Node` is an immutable type.  However, you can easily create a copy with one or more field values changed by using the `Node(::Node; kw...)` constructor where `kw` are the fields you want to change.  For example:
+- `Node` is an immutable type.  However, you can easily create a copy with one or more field values changed by using the `Node(::Node, children...; attrs...)` constructor where `children` are appended to the source node's children and `attrs` are appended to the node's attributes.
 
 ```julia
 node = XML.Element("tag", XML.Text("child"))
+# Node Element <tag> (1 child)
 
 simple_value(node)
 # "child"
 
-node2 = Node(node, children=XML.Text("changed"))
+node2 = Node(node, "added"; id="my-id")
+# Node Element <tag id="my-id"> (2 children)
 
-simple_value(node2)
-# "changed"
+node2.children
+# 2-element Vector{Node}:
+#  Node Text "child"
+#  Node Text "added"
 ```
 
 ### Writing `Element` `Node`s with `XML.h`
