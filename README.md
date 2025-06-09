@@ -102,7 +102,7 @@ node["key"]
 - `Node` is an immutable type.  However, you can easily create a copy with one or more field values changed by using the `Node(::Node, children...; attrs...)` constructor where `children` are appended to the source node's children and `attrs` are appended to the node's attributes.
 
 ```julia
-node = XML.Element("tag", XML.Text("child"))
+node = XML.Element("tag", "child")
 # Node Element <tag> (1 child)
 
 simple_value(node)
