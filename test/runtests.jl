@@ -116,7 +116,7 @@ end
     @test String(doc[end]) == "</catalog>"
 
     @testset "next and prev" begin
-        @test XML.prev(doc[1]) === data
+        @test XML.prev(doc[1]) == data
         @test prev(data) === nothing
         @test XML.next(doc[end]) === nothing
 
@@ -171,6 +171,114 @@ end
         @test XML.tag(x) === nothing
         @test XML.attributes(x) === nothing
         @test XML.value(x) == "Gambardella, Matthew"
+    end
+end
+
+#-----------------------------------------------------------------------------# Preserve whitespace
+@testset "xml:space" begin
+    @testset "Basic xml:space functionality" begin
+
+        # Test 1: xml:space="preserve" should preserve entirely empty whitespace
+        xml1 = """<root><text xml:space="preserve">   </text></root>"""
+        doc1 = parse(XML.Node, xml1)
+        text_content = XML.value(doc1[1][1][1])
+        @test text_content == "   "
+
+        # Test 2: xml:space="preserve" should preserve leading and trailing whitespace
+        xml2 = """<root><text xml:space="preserve">  leading and trailing spaces  </text></root>"""
+        doc2 = parse(XML.Node, xml2)
+        text_content = XML.value(doc2[1][1][1])
+        @test text_content == "  leading and trailing spaces  "
+        
+        # Test 3: Without xml:space, entirely empty whitespace should create a self closing node
+        xml3 = """<root><text>    </text></root>"""
+        doc3 = XML.parse(XML.Node, xml3)
+        text_content = XML.write(doc3[1][1])
+        @test text_content == "<text/>"
+
+        # Test 4: Without xml:space, whitespace should be normalized
+        xml4 = """<root><text>  gets normalized  </text></root>"""
+        doc4 = XML.parse(XML.Node, xml4)
+        text_content = XML.value(doc4[1][1][1])
+        @test text_content == "gets normalized"
+        
+        # Test 5: xml:space="default" should normalize even with preserve_xml_space=true
+        xml5 = """<root><text xml:space="default">  gets normalized  </text></root>"""
+        doc5 = XML.parse(XML.Node, xml5)
+        text_content = XML.value(doc5[1][1][1])
+        @test text_content == "gets normalized"
+    end
+    
+    @testset "xml:space inheritance" begin
+        # Test 6: Children inherit parent's xml:space="preserve"
+        xml6 = """<root xml:space="preserve">
+            <parent>  parent text  
+                <child>  child text  </child>
+            </parent>
+        </root>"""
+        doc6 = XML.parse(XML.Node, xml6)
+        # Both parent and child should preserve whitespace
+        @test contains(XML.value(doc6[1][1][1]), "parent text  \n")
+        @test XML.value(doc6[1][1][2][1]) == "  child text  "
+        
+        # Test 7: xml:space="default" overrides parent's "preserve"
+        xml7 = """<root xml:space="preserve">
+            <child xml:space="default">  normalized despite parent  </child>
+        </root>"""
+        doc7 = XML.parse(XML.Node, xml7)
+        @test XML.value(doc7[1][1][1]) == "normalized despite parent"
+    end
+    
+    @testset "Nesting scenarios" begin
+        # Test 8: Multiple levels of xml:space changes
+        xml8 = """<root xml:space="preserve">
+            <level1>  preserved  
+                <level2 xml:space="default">  normalized  
+                    <level3 xml:space="preserve">  preserved again  </level3>
+                </level2>
+            </level1>
+        </root>"""
+        doc8 = XML.parse(XML.Node, xml8)
+        
+        # level1 should preserve (inherits from root)
+        level1_text = XML.value(doc8[1][1][1])
+        @test level1_text == "  preserved  \n        "
+        
+        # level2 should normalize (explicit xml:space="default")
+        level2_text = XML.value(doc8[1][1][2][1])
+        @test level2_text == "normalized"
+        
+        # level3 should preserve (explicit xml:space="preserve")
+        level3_text = XML.value(doc8[1][1][2][2][1])
+        @test level3_text == "  preserved again  "
+
+        # Test 9: repeated multiple levels of xml:space changes
+        xml9 = """<root xml:space="preserve">
+            <level1>  preserved  
+                <level2 xml:space="default">  normalized  
+                    <level3 xml:space="preserve">  preserved again  </level3>
+                </level2>
+            </level1>  
+            <level1b>  preserved b  
+                <level2b xml:space="default">  normalized b 
+                    <level3b xml:space="preserve">  preserved again b  </level3b>
+                </level2b>
+            </level1b>
+        </root>"""
+        doc9 = XML.parse(XML.Node, xml9)
+
+        # level1b should preserve (inherits from root)
+        level1b_text = XML.value(doc9[1][2][1])
+        @test level1b_text == "  preserved b  \n        "
+        
+        # level2 should normalize (explicit xml:space="default")
+        level2b_text = XML.value(doc9[1][2][2][1])
+        @test level2b_text == "normalized b"
+        
+        # level3 should preserve (explicit xml:space="preserve")
+        level3b_text = XML.value(doc9[1][2][2][2][1])
+        @test level3b_text == "  preserved again b  "
+
     end
 end
 
