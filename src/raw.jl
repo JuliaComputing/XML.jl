@@ -28,10 +28,10 @@
     x === RawDocument               ? Document :
     nothing
 
-struct XMLSpaceContext
-    preserve_space::Vector{Bool}  # Stack to track xml:space state
-end
-XMLSpaceContext() = XMLSpaceContext([false])  # Default is not preserving
+#struct XMLSpaceContext
+#    preserve_space::Vector{Bool}  # Stack to track xml:space state
+#end
+#XMLSpaceContext() = XMLSpaceContext([false])  # Default is not preserving
 
 #-----------------------------------------------------------------------------# Raw
 """
@@ -69,9 +69,9 @@ struct Raw
     pos::Int
     len::Int
     data::Vector{UInt8}
-    ctx::XMLSpaceContext
+    ctx::Vector{Bool} # Context for xml:space (Vector so mutable)
 end
-Raw(data::Vector{UInt8}, ctx=XMLSpaceContext()) = Raw(RawDocument, 0, 0, 0, data, ctx)
+Raw(data::Vector{UInt8}, ctx=[false]) = Raw(RawDocument, 0, 0, 0, data, ctx)
 
 
 Base.read(filename::String, ::Type{Raw}) = isfile(filename) ?
@@ -169,25 +169,17 @@ function attributes(o::Raw)
         i = name_start(o.data, i)
         i = name_stop(o.data, i)
         out=get_attributes(o.data, i + 1, o.pos + o.len)
-        if !isnothing(out) && haskey(out, "xml:space")
+        if o.type === RawElementOpen && !isnothing(out) && haskey(out, "xml:space")
             # If xml:space attribute is present, we need to preserve whitespace
             if out["xml:space"] == "preserve"
-                push!(o.ctx.preserve_space, true)
+                o.ctx[1]= true
             elseif out["xml:space"] == "default"
-                push!(o.ctx.preserve_space, false)
+                o.ctx[1] = false
             else
                 error("Invalid value for xml:space attribute: $(out["xml:space"]).  Must be 'preserve' or 'default'.")
             end
         end
         out
-
-    elseif o.type === RawText
-        if length(o.ctx.preserve_space)>0
-            push!(o.ctx.preserve_space, o.ctx.preserve_space[end])
-        else
-            push!(o.ctx.preserve_space, false)
-        end
-        nothing
     elseif o.type === RawDeclaration
         get_attributes(o.data, o.pos + 6, o.pos + o.len)
     else
@@ -225,11 +217,7 @@ function children(o::Raw)
         out = Raw[]
         for item in xml_nodes(o)
             if item.depth == depth + 1
-                if length(item.ctx.preserve_space) > 0 
-                    item.ctx.preserve_space[1] = o.ctx.preserve_space[end]  # inherit the context
-                else
-                    push!(item.ctx.preserve_space, false)
-                end
+                item.ctx[1] = o.ctx[1]  # inherit the context
                 o.type==RawElementOpen && attributes(item)
                 push!(out, item)
             end
@@ -284,20 +272,19 @@ function next(o::Raw)
     ctx = o.ctx
     k = findnext(!isspace, data, i)
     if (isnothing(k) || length(String(o.data[o.pos + o.len + 1:end]))==0)
-        length(ctx.preserve_space)>0 && pop!(ctx.preserve_space)  # pop the previous context
         return nothing
     end
-    i = length(ctx.preserve_space) == 0 || !(ctx.preserve_space[end]) ? k : i
+    i = (ctx[1]) ? i : k
     j = i + 1
     c = Char(o.data[k])
     d = Char(o.data[k+1])
     if type === RawElementOpen || type === RawDocument
         depth += 1
     end
-    if c !== '<' || type === RawElementOpen && d === '/' && length(ctx.preserve_space) > 0 && (ctx.preserve_space[end])
+    if c !== '<' || type === RawElementOpen && d === '/' && (ctx[1])
         type = RawText
         j = findnext(==(UInt8('<')), data, i) - 1
-        j = length(ctx.preserve_space) == 0 || !(ctx.preserve_space[end]) ? findprev(!isspace, data, j) : j # preserving whitespace if needed
+        j = (ctx[1]) ? j : findprev(!isspace, data, j) # preserving whitespace if needed
     else
         i=k
         j=k+1
@@ -357,18 +344,17 @@ function prev(o::Raw)
     j = o.pos - 1
     k = findprev(!isspace, data, j)  
     if isnothing(k) || length(String(o.data[o.pos + o.len + 1:end]))==0
-        length(ctx.preserve_space)>0 && pop!(ctx.preserve_space)  # pop the previous context
         return Raw(data, ctx)  # RawDocument
     end
-    j = length(ctx.preserve_space) == 0 || !(ctx.preserve_space[end]) ? k : j
+    j = (ctx[1]) ? j : k
     c = Char(o.data[j])
     d = Char(data[findprev(==(UInt8('<')), data, j)+1])
     i = j - 1
     next_type = type
-    if c !== '>' || type === RawElementClose && d !== '/' && length(ctx.preserve_space) > 0 && (ctx.preserve_space[end]) # text or empty whitespace
+    if c !== '>' || type === RawElementClose && d !== '/' && (ctx[1]) # text or empty whitespace
         type = RawText
         i=findprev(==(UInt8('>')), data, j) + 1
-        i = length(ctx.preserve_space) == 0 || !(ctx.preserve_space[end]) ? findprev(!isspace, data, i) : i # If preserving whitespace, retain leading and trailing whitespace
+        i = (ctx[1]) ? i : findprev(!isspace, data, i) # If preserving whitespace, retain leading and trailing whitespace
     else
         j=k
         i=k-1
