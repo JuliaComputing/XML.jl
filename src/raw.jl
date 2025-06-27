@@ -358,7 +358,7 @@ function prev(o::Raw)
     k = findprev(!isspace, data, j)  
     if isnothing(k) || length(String(o.data[o.pos + o.len + 1:end]))==0
         length(ctx.preserve_space)>0 && pop!(ctx.preserve_space)  # pop the previous context
-        return Raw(data)  # RawDocument
+        return Raw(data, ctx)  # RawDocument
     end
     j = length(ctx.preserve_space) == 0 || !(ctx.preserve_space[end]) ? k : j
     c = Char(o.data[j])

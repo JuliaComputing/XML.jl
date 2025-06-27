@@ -116,7 +116,7 @@ end
     @test String(doc[end]) == "</catalog>"
 
     @testset "next and prev" begin
-        @test XML.prev(doc[1]) == data
+        @test XML.prev(doc[1]) === data
         @test prev(data) === nothing
         @test XML.next(doc[end]) === nothing
 
