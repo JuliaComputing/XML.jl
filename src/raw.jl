@@ -365,7 +365,7 @@ function prev(o::Raw)
     d = Char(data[findprev(==(UInt8('<')), data, j)+1])
     i = j - 1
     next_type = type
-    if c !== '>' || type === RawElementClose && d === '/' && length(ctx.preserve_space) > 0 && (ctx.preserve_space[end]) # text or empty whitespace
+    if c !== '>' || type === RawElementClose && d !== '/' && length(ctx.preserve_space) > 0 && (ctx.preserve_space[end]) # text or empty whitespace
         type = RawText
         i=findprev(==(UInt8('>')), data, j) + 1
         i = length(ctx.preserve_space) == 0 || !(ctx.preserve_space[end]) ? findprev(!isspace, data, i) : i # If preserving whitespace, retain leading and trailing whitespace
