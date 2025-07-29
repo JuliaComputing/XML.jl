@@ -28,6 +28,11 @@
     x === RawDocument               ? Document :
     nothing
 
+#struct XMLSpaceContext
+#    preserve_space::Vector{Bool}  # Stack to track xml:space state
+#end
+#XMLSpaceContext() = XMLSpaceContext([false])  # Default is not preserving
+
 #-----------------------------------------------------------------------------# Raw
 """
     Raw(filename::String)
@@ -64,8 +69,10 @@ struct Raw
     pos::Int
     len::Int
     data::Vector{UInt8}
+    ctx::Vector{Bool} # Context for xml:space (Vector so mutable)
 end
-Raw(data::Vector{UInt8}) = Raw(RawDocument, 0, 0, 0, data)
+Raw(data::Vector{UInt8}, ctx=[false]) = Raw(RawDocument, 0, 0, 0, data, ctx)
+
 
 Base.read(filename::String, ::Type{Raw}) = isfile(filename) ?
     Raw(Mmap.mmap(filename)) :
@@ -117,7 +124,7 @@ end
 # starting at position i, return attributes up until the next '>' or '?' (DTD)
 function get_attributes(data, i, j)
     i = name_start(data, i)
-    i > j && return nothing
+    (isnothing(j) || isnothing(i) || i > j) && return nothing
     out = OrderedDict{String, String}()
     while !isnothing(i) && i < j
         key, i = get_name(data, i)
@@ -161,7 +168,18 @@ function attributes(o::Raw)
         i = o.pos
         i = name_start(o.data, i)
         i = name_stop(o.data, i)
-        get_attributes(o.data, i + 1, o.pos + o.len)
+        out=get_attributes(o.data, i + 1, o.pos + o.len)
+        if o.type === RawElementOpen && !isnothing(out) && haskey(out, "xml:space")
+            # If xml:space attribute is present, we need to preserve whitespace
+            if out["xml:space"] == "preserve"
+                o.ctx[1]= true
+            elseif out["xml:space"] == "default"
+                o.ctx[1] = false
+            else
+                error("Invalid value for xml:space attribute: $(out["xml:space"]).  Must be 'preserve' or 'default'.")
+            end
+        end
+        out
     elseif o.type === RawDeclaration
         get_attributes(o.data, o.pos + 6, o.pos + o.len)
     else
@@ -198,7 +216,11 @@ function children(o::Raw)
         depth = o.depth
         out = Raw[]
         for item in xml_nodes(o)
-            item.depth == depth + 1 && push!(out, item)
+            if item.depth == depth + 1
+                item.ctx[1] = o.ctx[1]  # inherit the context
+                o.type==RawElementOpen && attributes(item)
+                push!(out, item)
+            end
             item.depth == depth && break
             o.type === RawDocument && item.depth == 2 && break # break if we've seen the doc root
         end
@@ -247,55 +269,64 @@ function next(o::Raw)
     depth = o.depth
     data = o.data
     type = o.type
-    i = findnext(!isspace, data, i)  # skip insignificant whitespace
-    isnothing(i) && return nothing
+    ctx = o.ctx
+    k = findnext(!isspace, data, i)
+    if (isnothing(k) || length(String(o.data[o.pos + o.len + 1:end]))==0)
+        return nothing
+    end
+    i = (ctx[1]) ? i : k
+    j = i + 1
+    c = Char(o.data[k])
+    d = Char(o.data[k+1])
     if type === RawElementOpen || type === RawDocument
         depth += 1
     end
-    c = Char(o.data[i])
-    j = i + 1
-    if c !== '<'
+    if c !== '<' || type === RawElementOpen && d === '/' && (ctx[1])
         type = RawText
         j = findnext(==(UInt8('<')), data, i) - 1
-        j = findprev(!isspace, data, j)   # "rstrip"
-    elseif c === '<'
-        c2 = Char(o.data[i + 1])
-        if c2 === '!'
-            c3 = Char(o.data[i + 2])
-            if c3 === '-'
-                type = RawComment
-                j = findnext(Vector{UInt8}("-->"), data, i)[end]
-            elseif c3 === '['
-                type = RawCData
-                j = findnext(Vector{UInt8}("]]>"), data, i)[end]
-            elseif c3 === 'D' || c3 == 'd'
-                type = RawDTD
-                j = findnext(==(UInt8('>')), data, i)
-                while sum(==(UInt8('>')), data[i:j]) != sum(==(UInt8('<')), data[i:j])
-                    j = findnext(==(UInt8('>')), data, j + 1)
+        j = (ctx[1]) ? j : findprev(!isspace, data, j) # preserving whitespace if needed
+    else
+        i=k
+        j=k+1
+        if c === '<'
+            c2 = Char(o.data[i + 1])
+            if c2 === '!'
+                c3 = Char(o.data[i + 2])
+                if c3 === '-'
+                    type = RawComment
+                    j = findnext(Vector{UInt8}("-->"), data, i)[end]
+                elseif c3 === '['
+                    type = RawCData
+                    j = findnext(Vector{UInt8}("]]>"), data, i)[end]
+                elseif c3 === 'D' || c3 == 'd'
+                    type = RawDTD
+                    j = findnext(==(UInt8('>')), data, i)
+                    while sum(==(UInt8('>')), data[k:j]) != sum(==(UInt8('<')), data[i:j])
+                        j = findnext(==(UInt8('>')), data, j + 1)
+                    end
                 end
-            end
-        elseif c2 === '?'
-            if get_name(data, i + 2)[1] == "xml"
-                type = RawDeclaration
+            elseif c2 === '?'
+                if get_name(data, i + 2)[1] == "xml"
+                    type = RawDeclaration
+                else
+                    type = RawProcessingInstruction
+                end
+                j = findnext(Vector{UInt8}("?>"), data, i)[end]
+            elseif c2 === '/'
+                type = RawElementClose
+                depth -= 1
+                j = findnext(==(UInt8('>')), data, i)
             else
-                type = RawProcessingInstruction
-            end
-            j = findnext(Vector{UInt8}("?>"), data, i)[end]
-        elseif c2 === '/'
-            type = RawElementClose
-            depth -= 1
-            j = findnext(==(UInt8('>')), data, i)
-        else
-            j = findnext(==(UInt8('>')), data, i)
-            if data[j-1] === UInt8('/')
-                type = RawElementSelfClosed
-            else
-                type = RawElementOpen
+                j = findnext(==(UInt8('>')), data, i)
+                if data[j-1] === UInt8('/')
+                    type = RawElementSelfClosed
+                else
+                    type = RawElementOpen                   
+                end
             end
         end
     end
-    return Raw(type, depth, i, j - i, data)
+    return Raw(type, depth, i, j - i, data, ctx)
 end
 
 #-----------------------------------------------------------------------------# prev Raw
@@ -308,52 +339,61 @@ function prev(o::Raw)
     depth = o.depth
     data = o.data
     type = o.type
+    ctx = o.ctx
     type === RawDocument && return nothing
     j = o.pos - 1
-    j = findprev(!isspace, data, j)  # skip insignificant whitespace
-    isnothing(j) && return Raw(data)  # RawDocument
+    k = findprev(!isspace, data, j)  
+    if isnothing(k) || length(String(o.data[o.pos + o.len + 1:end]))==0
+        return Raw(data, ctx)  # RawDocument
+    end
+    j = (ctx[1]) ? j : k
     c = Char(o.data[j])
+    d = Char(data[findprev(==(UInt8('<')), data, j)+1])
     i = j - 1
     next_type = type
-    if c !== '>' # text
+    if c !== '>' || type === RawElementClose && d !== '/' && (ctx[1]) # text or empty whitespace
         type = RawText
-        i = findprev(==(UInt8('>')), data, j) + 1
-        i = findnext(!isspace, data, i)  # "lstrip"
-    elseif c === '>'
-        c2 = Char(o.data[j - 1])
-        if c2 === '-'
-            type = RawComment
-            i = findprev(Vector{UInt8}("<--"), data, j)[1]
-        elseif c2 === ']'
-            type = RawCData
-            i = findprev(Vector{UInt8}("<![CData["), data, j)[1]
-        elseif c2 === '?'
-            i = findprev(Vector{UInt8}("<?"), data, j)[1]
-            if get_name(data, i + 2)[1] == "xml"
-                type = RawDeclaration
-            else
-                type = RawProcessingInstruction
-            end
-        else
-            i = findprev(==(UInt8('<')), data, j)
-            char = Char(data[i+1])
-            if char === '/'
-                type = RawElementClose
-            elseif char === '!'
-                type = DTD
-            elseif isletter(char) || char === '_'
-                type = Char(o.data[j - 2]) === '/' ? RawElementSelfClosed : RawElementOpen
-            else
-                error("Should be unreachable.  Unexpected data: <$char ... $c3$c2$c1>.")
-            end
-        end
+        i=findprev(==(UInt8('>')), data, j) + 1
+        i = (ctx[1]) ? i : findprev(!isspace, data, i) # If preserving whitespace, retain leading and trailing whitespace
     else
-        error("Unreachable reached in XML.prev")
+        j=k
+        i=k-1
+        if c === '>'
+            c2 = Char(o.data[j - 1])
+            if c2 === '-'
+                type = RawComment
+                i = findprev(Vector{UInt8}("<--"), data, j)[1]
+            elseif c2 === ']'
+                type = RawCData
+                i = findprev(Vector{UInt8}("<![CData["), data, j)[1]
+            elseif c2 === '?'
+                i = findprev(Vector{UInt8}("<?"), data, j)[1]
+                if get_name(data, i + 2)[1] == "xml"
+                    type = RawDeclaration
+                else
+                    type = RawProcessingInstruction
+                end
+            else
+                i = findprev(==(UInt8('<')), data, j)
+                char = Char(data[i+1])
+                if char === '/'
+                    type = RawElementClose
+                elseif char === '!'
+                    type = DTD
+                elseif isletter(char) || char === '_'
+                    type = Char(o.data[j - 2]) === '/' ? RawElementSelfClosed : RawElementOpen
+                else
+                    error("Should be unreachable.  Unexpected data: <$char ... $c3$c2$c1>.")
+                end
+            end        
+        else
+            error("Unreachable reached in XML.prev")
+        end
     end
     if type !== RawElementOpen && next_type === RawElementClose
         depth += 1
     elseif type == RawElementOpen && next_type !== RawElementClose
         depth -= 1
     end
-    return Raw(type, depth, i, j - i, data)
+    return Raw(type, depth, i, j - i, data, ctx)
 end
