@@ -4,7 +4,7 @@ using StyledStrings
 
 export
     read_xml, write_xml,
-    Text, Comment, CData
+    Text, Comment, CData, ProcessingInstruction
 
 #-----------------------------------------------------------------------------# escape/unescape
 const escape_chars = ('&' => "&amp;", '<' => "&lt;", '>' => "&gt;", "'" => "&apos;", '"' => "&quot;")
@@ -26,46 +26,46 @@ function peek_str(io::IO, n::Integer)
     return out
 end
 
-#-----------------------------------------------------------------------------# Attributes
-struct Attributes <: AbstractDict{Symbol, String}
-    keys::Vector{Symbol}
-    values::Vector{String}
-end
-function Attributes(pairs::Pair...)
-    keys = [Symbol(x) for x in first.(pairs)]
-    values = [string(x) for x in last.(pairs)]
-    Attributes(keys, values)
-end
-Attributes(; kw...) = Attributes(collect(kw)...)
+# #-----------------------------------------------------------------------------# Attributes
+# struct Attributes <: AbstractDict{Symbol, String}
+#     keys::Vector{Symbol}
+#     values::Vector{String}
+# end
+# function Attributes(pairs::Pair...)
+#     keys = [Symbol(x) for x in first.(pairs)]
+#     values = [string(x) for x in last.(pairs)]
+#     Attributes(keys, values)
+# end
+# Attributes(; kw...) = Attributes(collect(kw)...)
 
-Base.keys(o::Attributes) = getfield(o, :keys)
-Base.values(o::Attributes) = getfield(o, :values)
-Base.length(o::Attributes) = length(keys(o))
-Base.iterate(o::Attributes, i=1) = i > length(o) ? nothing : (keys(o)[i] => values(o)[i], i + 1)
+# Base.keys(o::Attributes) = getfield(o, :keys)
+# Base.values(o::Attributes) = getfield(o, :values)
+# Base.length(o::Attributes) = length(keys(o))
+# Base.iterate(o::Attributes, i=1) = i > length(o) ? nothing : (keys(o)[i] => values(o)[i], i + 1)
 
-function Base.getindex(o::Attributes, k::Symbol)
-    i = findfirst(==(k), keys(o))
-    isnothing(i) ? throw(KeyError(k)) : values(o)[i]
-end
-Base.getindex(o::Attributes, x::AbstractString) = o[Symbol(x)]
-Base.getindex(o::Attributes, i::Integer) = keys(o)[i] => values(o)[i]
-function Base.setindex!(o::Attributes, v, k::Symbol)
-    i = findfirst(==(k), keys(o))
-    if isnothing(i)
-        push!(keys(o), k)
-        push!(values(o), string(v))
-    else
-        values(o)[i] = string(v)
-    end
-    return v
-end
+# function Base.getindex(o::Attributes, k::Symbol)
+#     i = findfirst(==(k), keys(o))
+#     isnothing(i) ? throw(KeyError(k)) : values(o)[i]
+# end
+# Base.getindex(o::Attributes, x::AbstractString) = o[Symbol(x)]
+# Base.getindex(o::Attributes, i::Integer) = keys(o)[i] => values(o)[i]
+# function Base.setindex!(o::Attributes, v, k::Symbol)
+#     i = findfirst(==(k), keys(o))
+#     if isnothing(i)
+#         push!(keys(o), k)
+#         push!(values(o), string(v))
+#     else
+#         values(o)[i] = string(v)
+#     end
+#     return v
+# end
 
-Base.propertynames(o::Attributes) = keys(o)
-Base.getproperty(o::Attributes, k::Symbol) = getindex(o, k)
-Base.setproperty!(o::Attributes, k::Symbol, v) = setindex!(o, v, k)
+# Base.propertynames(o::Attributes) = keys(o)
+# Base.getproperty(o::Attributes, k::Symbol) = getindex(o, k)
+# Base.setproperty!(o::Attributes, k::Symbol, v) = setindex!(o, v, k)
 
 #-----------------------------------------------------------------------------# Types
-# Document, DTD, Declaration, ProcessingInstruction, CData, Element
+# Document, DTD, Element
 
 abstract type XMLNode end
 
@@ -82,6 +82,10 @@ function Base.show(io::IO, o::T) where {T <: XMLNode}
 end
 
 #-----------------------------------------------------------------------------# Text
+"""
+    Text(value::AbstractString)
+    # value
+"""
 struct Text{T <: AbstractString} <: XMLNode
     value::T
 end
@@ -90,43 +94,85 @@ read_xml(io::IO, o::Type{T}) where {T <: Text} = Text(readuntil(io, '<'))
 is_next(io::IO, o::Type{T}) where {T <: Text} = peek(io, Char) != '<'
 
 #-----------------------------------------------------------------------------# Comment
+"""
+    Comment(value::AbstractString)
+    # <!-- value -->
+"""
 struct Comment{T <: AbstractString} <: XMLNode
     value::T
 end
 write_xml(io::IO, o::Comment) = print(io, "<!--", o.value, "-->")
 function read_xml(io::IO, ::Type{T}) where {T <: Comment}
-    readuntil(io, "<!--", keep=true)
-    s = readuntil(io, "-->")
-    read(io, 3)
-    Comment(s)
+    read(io, 4) # <!--
+    return Comment(readuntil(io, "-->"))
 end
 is_next(io::IO, ::Type{T}) where {T <: Comment} = peek_str(io, 4) == "<!--"
 
+
 #-----------------------------------------------------------------------------# CData
+"""
+    CData(value::AbstractString)
+    # <![CDATA[ value ]]>
+"""
 struct CData{T <: AbstractString} <: XMLNode
     value::T
 end
 write_xml(io::IO, o::CData) = print(io, "<![CDATA[", o.value, "]]>")
 function read_xml(io::IO, ::Type{T}) where {T <: CData}
-    readuntil(io, "<![CDATA[", keep=true)
-    s = readuntil(io, "]]>")
-    read(io, 3)
-    CData(s)
+    read(io, 9)  # <![CDATA[
+    CData(readuntil(io, "]]>"))
 end
 is_next(io::IO, ::Type{T}) where {T <: CData} = peek_str(io, 9) == "<![CDATA["
 
-# struct ProcessingInstruction{T <: AbstractString} <: XMLNode
-#     target::T
-#     data::T
-# end
-# xml(io::IO, o::ProcessingInstruction) = print(io, "<?", o.target, " ", o.data, "?>")
 
-# struct Declaration{T <: AbstractString} <: XMLNode
-#     version::T
-#     encoding::T
-#     standalone::Bool
-# end
-# xml(io::IO, o::Declaration) = print(io, "<?xml version=\"", o.version, "\" encoding=\"", o.encoding, "\" standalone=\"", o.standalone ? "yes" : "no", "\"?>")
+#-----------------------------------------------------------------------------# ProcessingInstruction
+"""
+    ProcessingInstruction(target::AbstractString, data::AbstractString)
+    # <?target data?>
+"""
+struct ProcessingInstruction{T <: AbstractString} <: XMLNode
+    target::T
+    data::T
+end
+ProcessingInstruction(target::T; kw...) where {T} = ProcessingInstruction(target, join([T("$k=\"$v\"") for (k, v) in kw]))
+write_xml(io::IO, o::ProcessingInstruction) = print(io, "<?", o.target, " ", o.data, "?>")
+function read_xml(io::IO, ::Type{T}) where {T <: ProcessingInstruction}
+    read(io, 2)  # <?
+    target = readuntil(io, ' ')
+    data = readuntil(io, "?>")
+    return ProcessingInstruction(target, data)
+end
+is_next(io::IO, ::Type{T}) where {T <: ProcessingInstruction} = peek_str(io, 2) == "<?" && peek_str(io, 5) != "<?xml"
+
+
+#-----------------------------------------------------------------------------# Declaration
+"""
+    Decleration(version = "1.0", encoding="UTF-8", standalone="no")
+    # <?xml version="1.0" encoding="UTF-8" standalone="no"?>
+"""
+struct Declaration{T <: AbstractString} <: XMLNode
+    version::T
+    encoding::Union{Nothing, T}
+    standalone::Union{Nothing, Bool}
+end
+function write_xml(io::IO, o::Declaration)
+    print(io, "<?xml version=", repr(o.version))
+    !isnothing(o.encoding) && print(" encoding=", repr(o.encoding))
+    !isnothing(o.standalone) && print(" standalone=", repr(o.standalone ? "yes" : "no"))
+    print(io, "?>")
+end
+function read_xml(io::IO, ::Type{T}) where {T <: Declaration}
+    read(io, 5)  # <?xml
+    readuntil(io, "version")
+    readuntil(io, "=")
+    readuntil(io, '"')
+    version = readuntil(io, '"')
+end
+
+is_next(io::IO, ::Type{T}) where {T <: ProcessingInstruction} = peek_str(io, 2) == "<?" && peek_str(io, 5) == "<?xml"
+
+
+
 
 # struct Element{T} <: XMLNode
 #     name::Symbol

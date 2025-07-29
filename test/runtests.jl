@@ -29,6 +29,13 @@ end
     @test XML.roundtrip(CData(" Test!"))
 end
 
+
+#-----------------------------------------------------------------------------# ProcessingInstruction
+@testset "ProcessingInstruction" begin
+    s = "<?target data1 data2 data3?>"
+    @test read_xml(s, ProcessingInstruction) == ProcessingInstruction("target", "data1 data2 data3")
+end
+
 # using XML
 # using XML: Document, Element, Declaration, Comment, CData, DTD, ProcessingInstruction, Text, escape, unescape, OrderedDict, h
 # using Downloads: download
