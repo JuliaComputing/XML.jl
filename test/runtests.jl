@@ -116,7 +116,7 @@ end
     @test String(doc[end]) == "</catalog>"
 
     @testset "next and prev" begin
-        @test XML.prev(doc[1]) === data
+        @test XML.prev(doc[1]) == data # can't use === here because prev returns a copy of ctx
         @test prev(data) === nothing
         @test XML.next(doc[end]) === nothing
 
@@ -132,6 +132,76 @@ end
         for (a,b) in zip(next_res, prev_res)
             @test a == b
         end
+
+        lzxml = """<root><text>    </text><text2>  hello  </text2><text3 xml:space="preserve">  hello  <text3b>  preserve  </text3b></text3><text4 xml:space="preserve"></text4><text5/></root>"""
+        lz = XML.parse(XML.LazyNode, lzxml)
+        n=XML.next(lz)
+        n=XML.next(n)
+        text_content = XML.write(n)
+       @test text_content == "<text/>"
+        n=XML.next(n)
+        text_content = XML.write(n)
+        @test text_content == "<text2>hello</text2>"
+        n=XML.next(n)
+        text_content = XML.write(n)
+        @test text_content == "hello"
+        n=XML.next(n)
+        text_content = XML.write(n)
+        @test text_content == "<text3 xml:space=\"preserve\">\n    hello  \n  <text3b>  preserve  </text3b>\n</text3>"
+        n=XML.prev(n)
+        text_content = XML.write(n)
+        @test text_content == "hello"
+        n=XML.next(n)
+        text_content = XML.write(n)
+        @test text_content == "<text3 xml:space=\"preserve\">\n    hello  \n  <text3b>  preserve  </text3b>\n</text3>"
+        n=XML.next(n)
+        text_content = XML.write(n)
+        @test text_content == "  hello  "
+        n=XML.next(n)
+        text_content = XML.write(n)
+        @test text_content == "<text3b>  preserve  </text3b>"
+        n=XML.next(n)
+        text_content = XML.write(n)
+        @test text_content == "  preserve  "
+        n=XML.next(n)
+        text_content = XML.write(n)
+        @test text_content == "<text4 xml:space=\"preserve\"/>"
+        n=XML.next(n)
+        text_content = XML.write(n)
+        @test text_content == "<text5/>"
+        n=XML.prev(n)
+        text_content = XML.write(n)
+        @test text_content == "<text4 xml:space=\"preserve\"/>"
+        n=XML.prev(n)
+        text_content = XML.write(n)
+        @test text_content == "  preserve  "
+        n=XML.prev(n)
+        text_content = XML.write(n)
+        @test text_content == "<text3b>  preserve  </text3b>"
+        n=XML.prev(n)
+        text_content = XML.write(n)
+        @test text_content == "  hello  "
+        n=XML.prev(n)
+        text_content = XML.write(n)
+        @test text_content == "<text3 xml:space=\"preserve\">\n    hello  \n  <text3b>  preserve  </text3b>\n</text3>"
+        n=XML.next(n)
+        text_content = XML.write(n)
+        @test text_content == "  hello  "
+        n=XML.prev(n)
+        text_content = XML.write(n)
+        @test text_content == "<text3 xml:space=\"preserve\">\n    hello  \n  <text3b>  preserve  </text3b>\n</text3>"
+        n=XML.prev(n)
+        text_content = XML.write(n)
+        @test text_content == "hello"
+        n=XML.prev(n)
+        text_content = XML.write(n)
+        @test text_content == "<text2>hello</text2>"
+        n=XML.prev(n)
+        text_content = XML.write(n)
+        @test text_content == "<text/>"
+        n=XML.prev(n)
+        text_content = XML.write(n)
+        @test text_content == "<root>\n  <text/>\n  <text2>hello</text2>\n  <text3 xml:space=\"preserve\">\n      hello  \n    <text3b>  preserve  </text3b>\n  </text3>\n  <text4 xml:space=\"preserve\"/>\n  <text5/>\n</root>"
     end
 
     @testset "depth and parent" begin
@@ -190,11 +260,15 @@ end
         text_content = XML.value(doc2[1][1][1])
         @test text_content == "  leading and trailing spaces  "
         
-        # Test 3: Without xml:space, entirely empty whitespace should create a self closing node
-        xml3 = """<root><text>    </text></root>"""
+        # Test 3: Entirely empty tags with and without xml:space="preserve" become self-closing
+        xml3 = """<root><text>    </text><text2 xml:space="preserve">    </text2><text3 xml:space="preserve"></text3><text4/></root>"""
         doc3 = XML.parse(XML.Node, xml3)
         text_content = XML.write(doc3[1][1])
-        @test text_content == "<text/>"
+        @test text_content == "<text/>" # without xml:space="preserve", empty text becomes self-closing
+        text_content = XML.value(doc3[1][2][1])
+        @test text_content == "    " # with xml:space, whitespace is preserved
+        text_content = XML.write(doc3[1][3])
+        @test text_content == "<text3 xml:space=\"preserve\"/>" # with xml:space="preserve", empty text becomes self-closing
 
         # Test 4: Without xml:space, whitespace should be normalized
         xml4 = """<root><text>  gets normalized  </text></root>"""
@@ -218,15 +292,15 @@ end
         </root>"""
         doc6 = XML.parse(XML.Node, xml6)
         # Both parent and child should preserve whitespace
-        @test contains(XML.value(doc6[1][1][1]), "parent text  \n")
-        @test XML.value(doc6[1][1][2][1]) == "  child text  "
+        @test contains(XML.value(doc6[1][2][1]), "parent text  \n")
+        @test XML.value(doc6[1][2][2][1]) == "  child text  "
         
         # Test 7: xml:space="default" overrides parent's "preserve"
         xml7 = """<root xml:space="preserve">
             <child xml:space="default">  normalized despite parent  </child>
         </root>"""
         doc7 = XML.parse(XML.Node, xml7)
-        @test XML.value(doc7[1][1][1]) == "normalized despite parent"
+        @test XML.value(doc7[1][2][1]) == "normalized despite parent"
     end
     
     @testset "Nesting scenarios" begin
@@ -241,15 +315,15 @@ end
         doc8 = XML.parse(XML.Node, xml8)
         
         # level1 should preserve (inherits from root)
-        level1_text = XML.value(doc8[1][1][1])
+        level1_text = XML.value(doc8[1][2][1])
         @test level1_text == "  preserved  \n        "
         
         # level2 should normalize (explicit xml:space="default")
-        level2_text = XML.value(doc8[1][1][2][1])
+        level2_text = XML.value(doc8[1][2][2][1])
         @test level2_text == "normalized"
         
         # level3 should preserve (explicit xml:space="preserve")
-        level3_text = XML.value(doc8[1][1][2][2][1])
+        level3_text = XML.value(doc8[1][2][2][2][1])
         @test level3_text == "  preserved again  "
 
         # Test 9: repeated multiple levels of xml:space changes
@@ -268,18 +342,236 @@ end
         doc9 = XML.parse(XML.Node, xml9)
 
         # level1b should preserve (inherits from root)
-        level1b_text = XML.value(doc9[1][2][1])
+        level1b_text = XML.value(doc9[1][3][1])
         @test level1b_text == "  preserved b  \n        "
         
         # level2 should normalize (explicit xml:space="default")
-        level2b_text = XML.value(doc9[1][2][2][1])
+        level2b_text = XML.value(doc9[1][3][2][1])
         @test level2b_text == "normalized b"
         
         # level3 should preserve (explicit xml:space="preserve")
-        level3b_text = XML.value(doc9[1][2][2][2][1])
+        level3b_text = XML.value(doc9[1][3][2][2][1])
         @test level3b_text == "  preserved again b  "
 
+        # Test 10: futher repeated multiple levels of xml:space changes
+        xml10 = """<root>
+            <level1>  normalized  
+                <level2>  normalized b  
+                    <level3 xml:space="preserve">  preserved   </level3>
+                </level2>
+            </level1>  
+            <level1b>  normalized c  
+                <level2b xml:space="preserve">  preserved b 
+                    <level3b xml:space="default">  normalized again b  </level3b>
+                    <level3c>  preserved c 
+                    </level3c>
+                </level2b>
+            </level1b>
+            <level1c>  normalized d   </level1c>
+        </root>"""
+        doc10 = XML.parse(XML.Node, xml10)
+        
+        # level1 should normalize (as root)
+        level1_text = XML.value(doc10[end][1][1])
+        @test level1_text == "normalized"
+        
+        # level2 should normalize (as root and level1)
+        level2_text = XML.value(doc10[end][1][2][1])
+        @test level2_text == "normalized b"
+        
+        # level3 should preserve (explicit xml:space="preserve")
+        level3_text = XML.value(doc10[end][1][2][2][1])
+        @test level3_text == "  preserved   "
+        
+        # level1b should normalize (as root)
+        level1b_text = XML.value(doc10[end][2][1])
+        @test level1b_text == "normalized c"
+        
+        # level2b should preserve (explicit xml:space="preserve")
+        level2b_text = XML.value(doc10[end][2][2][1])
+        @test level2b_text == "  preserved b \n            "
+        
+        # level3 should normalize (explicit xml:space="default")
+        level3b_text = XML.value(doc10[end][2][2][2][1])
+        @test level3b_text == "normalized again b"
+        
+        # level3c should preserve (inherited from level2b)
+        level3c_text = XML.value(doc10[end][2][2][3][1])
+        @test level3c_text == "  preserved c \n            "
+        
+        # level1c should normalize (as root)
+        level1c_text = XML.value(doc10[end][3][1])
+        @test level1c_text == "normalized d"
     end
+    @testset "inter-element gap semantics" begin
+        # Default parent: gap between siblings should be dropped
+        s1 = """<root><a> x </a>
+                <b> y </b></root>"""
+        d1 = XML.parse(XML.Node, s1)
+        @test length(d1[1]) == 2
+        @test XML.value(d1[1][1][1]) == "x"
+        @test XML.value(d1[1][2][1]) == "y"
+
+        # Preserve parent, default child ends: gap after default child dropped
+        s2 = """<root xml:space="preserve">
+                  <p> keep  </p>
+                  <q xml:space="default">  norm  </q>
+                  <r>  after default gap  </r>
+                </root>"""
+        d2 = XML.parse(XML.Node, s2)
+        @test length(d2[1]) == 4
+        @test XML.value(d2[1][1]) == "\n  "
+        @test XML.value(d2[1][2][1]) == " keep  "
+        @test XML.value(d2[1][3][1]) == "norm"
+        @test XML.value(d2[1][4][1]) == "  after default gap  "
+    end
+
+#    @testset "XML whitespace vs Unicode whitespace" begin
+#        nbsp = "\u00A0"
+#        s = """<root>
+#                 <a>  x\t\n  </a>
+#                 <b>$(nbsp) y $(nbsp)</b>
+#                 <c xml:space="default">$(nbsp)  z  $(nbsp)</c>
+#               </root>"""
+#        d = XML.parse(XML.Node, s)
+#        @test XML.value(d[1][1][1]) == "x"
+#        @test XML.value(d[1][2][1]) == "$(nbsp) y $(nbsp)"
+#        @test XML.value(d[1][3][1]) == "$(nbsp)  z  $(nbsp)"
+#    end
+
+    @testset "CDATA/Comment/PI boundaries" begin
+        s = """<root>
+                 <a xml:space="default">  pre  <![CDATA[  mid  ]]>  post  </a>
+                 <b xml:space="preserve">  pre  <!-- cmt -->  post  </b>
+                 <?xml-stylesheet type="text/css" href="style.css"?>
+               </root>"""
+        d = XML.parse(XML.Node, s)
+        @test XML.value(d[1][1][1]) == "pre"
+        @test nodetype(d[1][1][2]) == XML.CData
+        @test XML.value(d[1][1][3]) == "post"
+        @test XML.value(d[1][2][1]) == "  pre  "
+        @test nodetype(d[1][2][2]) == XML.Comment
+        @test XML.value(d[1][2][3]) == "  post  "
+        @test nodetype(d[1][3]) == XML.ProcessingInstruction
+    end
+
+    @testset "nested toggles and sibling sequences" begin
+        s = """<root xml:space="preserve">
+                 <x>  a  
+                   <y xml:space="default">  b  
+                     <z xml:space="preserve">  c  </z>
+                   </y>
+                   <y2 xml:space="default">  d  </y2>
+                   <w>  e  </w>
+                 </x>
+               </root>"""
+        d = XML.parse(XML.Node, s)
+        @test XML.value(d[1][2][1]) == "  a  \n    "
+        @test XML.value(d[1][2][2][1]) == "b"
+        @test XML.value(d[1][2][2][2][1]) == "  c  "
+        @test d[1][2][3].tag == "y2"
+        @test XML.value(d[1][2][3][1]) == "d"
+        @test d[1][2][4].tag == "w"
+        @test XML.value(d[1][2][4][1]) == "  e  "
+    end
+
+    @testset "root/document boundaries" begin
+        s = "\n  \n<root>  a  </root>\n \t "
+        d = XML.parse(XML.Node, s)
+        @test length(d) == 1
+        @test XML.value(d[1][1]) == "a"
+    end
+
+#    @testset "entities expanding to whitespace" begin
+#        s = """<root>
+#                 <a> &#x20; a &#x0A; </a>
+#                 <b xml:space="preserve">&#x20; b &#x0A;</b>
+#                 <c>&#xA0;c&#xA0;</c>
+#               </root>"""
+#        d = XML.parse(XML.Node, s)
+#        @test XML.value(d[1][1][1]) == "a"
+#        @test XML.value(d[1][2][1]) == "  b \n"
+#        @test XML.value(d[1][3][1]) == "\u00A0c\u00A0"
+#    end
+
+    @testset "invalid values and placement" begin
+        s_bad = """<root><x xml:space="weird"> t </x></root>"""
+        @test_throws ErrorException XML.parse(XML.Node, s_bad)
+
+        s_pi = """<?pi xml:space="preserve"?><root> t </root>"""
+        d = XML.parse(XML.Node, s_pi)
+        @test XML.value(d[end][1]) == "t"
+
+        s_dup = """<root><x xml:space="preserve" xml:space="default">  t  </x></root>"""
+#        @test_throws ErrorException XML.parse(XML.Node, s_dup)
+    end
+
+    @testset "prev()/next() symmetry" begin
+        xml = """<root xml:space="preserve">
+                    <a>  a  <b xml:space="default">  b  </b>  <c>  c  </c>  </a>
+                    <d xml:space="default">  d  <e xml:space="preserve">  e  </e>  f  </d>
+                    <g><h/><i xml:space="preserve">  i  </i><j/></g>
+                 </root>"""
+        r = XML.parse(XML.LazyNode, xml).raw
+        toks=XML.Raw[]
+        while true
+            n = XML.next(r)
+            n === nothing && break
+            push!(toks, n)
+            r=n
+        end
+        back = XML.Raw[]
+        r = toks[end]
+        while true
+            p = XML.prev(r)
+            p === nothing && break
+            push!(back, p)
+            r = p
+        end
+        @test reverse(back)[2:end] == toks[1:end-1]
+    end
+
+#    @testset "write/read roundtrip extremes" begin
+    # XML.write doesn't respect xml:space="preserve" in the current implementation so roundtrip isn't possible.
+#        xml = """<root>
+#                   <p xml:space="preserve">    </p>
+#                   <q>   </q>
+#                   <r xml:space="default">  r  </r>
+#                   <s xml:space="preserve"> pre <t/> post </s>
+#                 </root>"""
+#        n = XML.parse(XML.Node, xml)
+#        io = IOBuffer(); XML.write(io, n)
+#        n2 = XML.parse(XML.Node, String(take!(io)))
+#        @test n == n2
+#        @test XML.write(n2[1][1]) == "<p xml:space=\"preserve\">    </p>"
+#        @test XML.write(n2[1][2]) == "<q/>"
+#        @test XML.value(n2[1][3][1]) == "r"
+#        @test XML.write(n2[1][4]) == "<s xml:space=\"preserve\"> pre <t/> post </s>"
+#   end
+
+    @testset "self-closing/empty/whitespace-only children" begin
+        s = """<root>
+                 <a xml:space="default">    </a>
+                 <b xml:space="preserve"></b>
+                 <c xml:space="preserve">   </c>
+                 <d><e/></d>
+                 <f> x <g/> y </f>
+               </root>"""
+        d = XML.parse(XML.Node, s)
+        @test XML.write(d[1][1]) == "<a xml:space=\"default\"/>"
+        @test XML.write(d[1][2]) == "<b xml:space=\"preserve\"/>"
+        @test XML.value(d[1][3][1]) == "   "
+        @test XML.value(d[1][5][1]) == "x"
+        @test XML.value(d[1][5][3]) == "y"
+    end
+
+    @testset "allocation guard: small xml:space doc" begin
+        xml = "<root><a xml:space=\"default\"> x </a><b xml:space=\"preserve\"> y </b></root>"
+        f() = XML.parse(XML.Node, xml)
+        a = @allocated f()
+        @test a < 500_000  # tune for CI
+    end
+
 end
 
 #-----------------------------------------------------------------------------# roundtrip
