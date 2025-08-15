@@ -101,7 +101,7 @@ Base.read(io::IO, ::Type{Raw}) = Raw(read(io))
 Base.parse(x::AbstractString, ::Type{Raw}) = Raw(Vector{UInt8}(x))
 
 # Mostly for debugging
-Base.peek(o::Raw, n::Int) = String(@view(o.data[o.pos+o.len+1:min(end, o.pos + o.len + n + 1)]))
+Base.peek(o::Raw, n::Int) = String(view(o.data[o.pos+o.len+1:min(end, o.pos + o.len + n + 1)]))
 
 function Base.show(io::IO, o::Raw)
     print(io, o.type, ':', o.depth, " (pos=", o.pos, ", len=", o.len, ")")
@@ -146,7 +146,7 @@ function get_attributes(data, i, j)
     out = OrderedDict{String,String}()
     while !isnothing(i) && i < j
         key, i = get_name(data, i)
-#        haskey(out, key) && error("Duplicate attribute name found: $key")
+        haskey(out, key) && error("Duplicate attribute name found: $key")
         # get quotechar the value is wrapped in (either ' or ")
         i = findnext(x -> x === UInt8('"') || x === UInt8('''), data, i + 1)
         quotechar = data[i]
@@ -371,7 +371,8 @@ function next_xml_space(o::Raw)
         j = findnext(==(UInt8('<')), data, i) - 1
         j = ctx[end] ? j : findprev(!isspace, data, j) # preserving whitespace if needed
         if last_type === RawElementClose || last_type === RawElementSelfClosed|| last_type === RawDocument
-            # drop pure-whitespace inter-element text nodes (e.g. whitespace between a closing and an opening tag)
+            # drop pure-whitespace inter-element text nodes
+            # (e.g. whitespace between a closing and an opening tag which would otherwise make an orphan text node)
             if all(isspace, @view data[i:j]) && depth > 1
                 return next(Raw(type, depth, j, 0, data, ctx, has_xml_space))
             end
@@ -392,7 +393,7 @@ function next_xml_space(o::Raw)
                 elseif c3 === 'D' || c3 == 'd'
                     type = RawDTD
                     j = findnext(==(UInt8('>')), data, i)
-                    while sum(==(UInt8('>')), data[k:j]) != sum(==(UInt8('<')), data[i:j])
+                    while sum(==(UInt8('>')), @view data[k:j]) != sum(==(UInt8('<')), @view data[i:j])
                         j = findnext(==(UInt8('>')), data, j + 1)
                     end
                 end
@@ -454,7 +455,7 @@ function next_no_xml_space(o::Raw) # same as v0.3.5
             elseif c3 === 'D' || c3 == 'd'
                 type = RawDTD
                 j = findnext(==(UInt8('>')), data, i)
-                while sum(==(UInt8('>')), data[i:j]) != sum(==(UInt8('<')), data[i:j])
+                while sum(==(UInt8('>')), @view data[i:j]) != sum(==(UInt8('<')), @view data[i:j])
                     j = findnext(==(UInt8('>')), data, j + 1)
                 end
             end
