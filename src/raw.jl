@@ -146,7 +146,7 @@ function get_attributes(data, i, j)
     out = OrderedDict{String,String}()
     while !isnothing(i) && i < j
         key, i = get_name(data, i)
-        haskey(out, key) && error("Duplicate attribute name found: $key")
+        #haskey(out, key) && error("Duplicate attribute name found: $key") # would this be useful?
         # get quotechar the value is wrapped in (either ' or ")
         i = findnext(x -> x === UInt8('"') || x === UInt8('''), data, i + 1)
         quotechar = data[i]
@@ -371,11 +371,11 @@ function next_xml_space(o::Raw)
         j = findnext(==(UInt8('<')), data, i) - 1
         j = ctx[end] ? j : findprev(!isspace, data, j) # preserving whitespace if needed
         if last_type === RawElementClose || last_type === RawElementSelfClosed|| last_type === RawDocument
-            # drop pure-whitespace inter-element text nodes
+            # Maybe drop pure-whitespace inter-element text nodes?
             # (e.g. whitespace between a closing and an opening tag which would otherwise make an orphan text node)
-            if all(isspace, @view data[i:j]) && depth > 1
-                return next(Raw(type, depth, j, 0, data, ctx, has_xml_space))
-            end
+            #if all(isspace, @view data[i:j]) && depth > 1
+            #    return next(Raw(type, depth, j, 0, data, ctx, has_xml_space))
+            #end
         end
     else
         i = k

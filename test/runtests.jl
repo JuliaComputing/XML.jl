@@ -342,15 +342,15 @@ end
         doc9 = XML.parse(XML.Node, xml9)
 
         # level1b should preserve (inherits from root)
-        level1b_text = XML.value(doc9[1][3][1])
+        level1b_text = XML.value(doc9[1][4][1])
         @test level1b_text == "  preserved b  \n        "
         
         # level2 should normalize (explicit xml:space="default")
-        level2b_text = XML.value(doc9[1][3][2][1])
+        level2b_text = XML.value(doc9[1][4][2][1])
         @test level2b_text == "normalized b"
         
         # level3 should preserve (explicit xml:space="preserve")
-        level3b_text = XML.value(doc9[1][3][2][2][1])
+        level3b_text = XML.value(doc9[1][4][2][2][1])
         @test level3b_text == "  preserved again b  "
 
         # Test 10: futher repeated multiple levels of xml:space changes
@@ -396,7 +396,7 @@ end
         @test level3b_text == "normalized again b"
         
         # level3c should preserve (inherited from level2b)
-        level3c_text = XML.value(doc10[end][2][2][3][1])
+        level3c_text = XML.value(doc10[end][2][2][4][1])
         @test level3c_text == "  preserved c \n            "
         
         # level1c should normalize (as root)
@@ -419,11 +419,14 @@ end
                   <r>  after default gap  </r>
                 </root>"""
         d2 = XML.parse(XML.Node, s2)
-        @test length(d2[1]) == 4
+        @test length(d2[1]) == 7
         @test XML.value(d2[1][1]) == "\n  "
         @test XML.value(d2[1][2][1]) == " keep  "
-        @test XML.value(d2[1][3][1]) == "norm"
-        @test XML.value(d2[1][4][1]) == "  after default gap  "
+        @test XML.value(d2[1][3]) == "\n  "
+        @test XML.value(d2[1][4][1]) == "norm"
+        @test XML.value(d2[1][5]) == "\n  "
+        @test XML.value(d2[1][6][1]) == "  after default gap  "
+        @test XML.value(d2[1][7]) == "\n"
     end
 
 #    @testset "XML whitespace vs Unicode whitespace" begin
@@ -469,10 +472,10 @@ end
         @test XML.value(d[1][2][1]) == "  a  \n    "
         @test XML.value(d[1][2][2][1]) == "b"
         @test XML.value(d[1][2][2][2][1]) == "  c  "
-        @test d[1][2][3].tag == "y2"
-        @test XML.value(d[1][2][3][1]) == "d"
-        @test d[1][2][4].tag == "w"
-        @test XML.value(d[1][2][4][1]) == "  e  "
+        @test d[1][2][4].tag == "y2"
+        @test XML.value(d[1][2][4][1]) == "d"
+        @test d[1][2][6].tag == "w"
+        @test XML.value(d[1][2][6][1]) == "  e  "
     end
 
     @testset "root/document boundaries" begin
