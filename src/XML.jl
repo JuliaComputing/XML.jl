@@ -4,7 +4,7 @@ using StyledStrings
 
 export
     read_xml, write_xml,
-    Text, Comment, CData, ProcessingInstruction
+    Text, Comment, CData, ProcessingInstruction, Element, DTD, Document, Fragment
 
 #-----------------------------------------------------------------------------# escape/unescape
 const escape_chars = ('&' => "&amp;", '<' => "&lt;", '>' => "&gt;", "'" => "&apos;", '"' => "&quot;")
@@ -26,47 +26,9 @@ function peek_str(io::IO, n::Integer)
     return out
 end
 
-# #-----------------------------------------------------------------------------# Attributes
-# struct Attributes <: AbstractDict{Symbol, String}
-#     keys::Vector{Symbol}
-#     values::Vector{String}
-# end
-# function Attributes(pairs::Pair...)
-#     keys = [Symbol(x) for x in first.(pairs)]
-#     values = [string(x) for x in last.(pairs)]
-#     Attributes(keys, values)
-# end
-# Attributes(; kw...) = Attributes(collect(kw)...)
+is_name_start_char(x::Char) = isletter(x) || x == ':' || x == '_'
 
-# Base.keys(o::Attributes) = getfield(o, :keys)
-# Base.values(o::Attributes) = getfield(o, :values)
-# Base.length(o::Attributes) = length(keys(o))
-# Base.iterate(o::Attributes, i=1) = i > length(o) ? nothing : (keys(o)[i] => values(o)[i], i + 1)
-
-# function Base.getindex(o::Attributes, k::Symbol)
-#     i = findfirst(==(k), keys(o))
-#     isnothing(i) ? throw(KeyError(k)) : values(o)[i]
-# end
-# Base.getindex(o::Attributes, x::AbstractString) = o[Symbol(x)]
-# Base.getindex(o::Attributes, i::Integer) = keys(o)[i] => values(o)[i]
-# function Base.setindex!(o::Attributes, v, k::Symbol)
-#     i = findfirst(==(k), keys(o))
-#     if isnothing(i)
-#         push!(keys(o), k)
-#         push!(values(o), string(v))
-#     else
-#         values(o)[i] = string(v)
-#     end
-#     return v
-# end
-
-# Base.propertynames(o::Attributes) = keys(o)
-# Base.getproperty(o::Attributes, k::Symbol) = getindex(o, k)
-# Base.setproperty!(o::Attributes, k::Symbol, v) = setindex!(o, v, k)
-
-#-----------------------------------------------------------------------------# Types
-# Document, DTD, Element
-
+#-----------------------------------------------------------------------------# XMLNode
 abstract type XMLNode end
 
 write_xml(x) = sprint(write_xml, x)
@@ -147,7 +109,7 @@ is_next(io::IO, ::Type{T}) where {T <: ProcessingInstruction} = peek_str(io, 2) 
 
 #-----------------------------------------------------------------------------# Declaration
 """
-    Decleration(version = "1.0", encoding="UTF-8", standalone="no")
+    Declaration(version = "1.0", encoding="UTF-8", standalone="no")
     # <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 """
 struct Declaration{T <: AbstractString} <: XMLNode
@@ -169,26 +131,58 @@ function read_xml(io::IO, ::Type{T}) where {T <: Declaration}
     version = readuntil(io, '"')
 end
 
-is_next(io::IO, ::Type{T}) where {T <: ProcessingInstruction} = peek_str(io, 2) == "<?" && peek_str(io, 5) == "<?xml"
+is_next(io::IO, ::Type{T}) where {T <: Declaration} = peek_str(io, 2) == "<?" && peek_str(io, 5) == "<?xml"
 
 
+#-----------------------------------------------------------------------------# Element
+"""
+    Element(name, children...; attributes)
+    # <name attributes...> children... </name>
+"""
+struct Element{T} <: XMLNode
+    name::T
+    attributes::Vector{Pair{T, T}}
+    children::Vector{Union{Element{T}, Text{T}, CData{T}, Comment{T}}}
+end
+function write_xml(io::IO, o::Element)
+    print(io, '<', o.name)
+    for x in o.attributes
+        print(io, ' ', x[1], '=', repr(x[2]))
+    end
+    print(io, '>')
+    for x in o.children
+        write_xml(io, x)
+    end
+    print(io, "</", o.name, '>')
+end
+function read_xml(io::IO, ::Type{T}) where {T <: Element}
+    read(io, 1)
+    readuntil(io, )
+end
+function is_next(io::IO, ::Type{T}) where {T <: Element}
+    a, b = peek_str(io)
+    a == '<' && is_name_start_char(b)
+end
 
+#-----------------------------------------------------------------------------# DTD
+"""
+    DTD(value)
+    # <!DOCTYPE
+"""
+struct DTD{T} <: XMLNode
+    value::T
+end
 
-# struct Element{T} <: XMLNode
-#     name::Symbol
-#     attributes::Attributes
-#     children::Vector{Union{Element{T}, Text{T}, CData{T}, Comment{T}}}
-# end
+#-----------------------------------------------------------------------------# Document
+struct Document{T} <: XMLNode
+    prolog::Vector{Union{ProcessingInstruction{T}, DTD{T},  Declaration{T}, Comment{T}}}
+    root::Element{T}
+end
 
-
-# struct DTD{T} <: XMLNode
-#     value::T
-# end
-
-# struct Document{T} <: XMLNode
-#     prolog::Vector{Union{ProcessingInstruction{T}, DTD{T},  Declaration{T}, Comment{T}}}
-#     root::Element{T}
-# end
+#-----------------------------------------------------------------------------# Fragment
+struct Fragment{T} <: XMLNode
+    children::Vector{Union{Element{T}, Comment{T}, CData{T}, Text{T}}}
+end
 
 # #-----------------------------------------------------------------------------# printing
 # xml(x) = sprint(xml, x)
