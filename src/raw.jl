@@ -70,6 +70,7 @@ end
 function Raw(data::Vector{UInt8})#, ctx::Vector{Bool}=Bool[false])
     needle = Vector{UInt8}("xml:space")
     has_xml_space = findfirst(needle, data) !== nothing
+    data=normalize_newlines(data)
     return Raw(RawDocument, 0, 0, 0, data, [false], has_xml_space)
 end
 function Raw(data::Vector{UInt8}, has_xml_space::Bool, ctx::Vector{Bool}=Bool[false])
@@ -99,6 +100,40 @@ Base.read(filename::String, ::Type{Raw}) = isfile(filename) ?
 Base.read(io::IO, ::Type{Raw}) = Raw(read(io))
 
 Base.parse(x::AbstractString, ::Type{Raw}) = Raw(Vector{UInt8}(x))
+
+
+"""
+    normalize_newlines(bytes::Vector{UInt8}) -> Vector{UInt8}
+
+Implements XML 1.1 §2.11 line-end normalization:
+- CR (0x0D) alone  → LF (0x0A)
+- CR LF pair       → LF
+- NEL (U+0085)     → LF
+- LS  (U+2028)     → LF
+"""
+function normalize_newlines(bytes::Vector{UInt8})
+    n = length(bytes)
+    out = Vector{UInt8}(undef, n)
+    outlen = 0
+    i = 1
+    while i <= n
+        @inbounds b = bytes[i]
+        if b == 0x0D
+            outlen += 1; out[outlen] = 0x0A
+            i += (i < n && (bytes[i+1] == 0x0A || bytes[i+1] == 0x85)) ? 2 : 1
+        elseif b == 0xC2 && i < n && bytes[i+1] == 0x85
+            outlen += 1; out[outlen] = 0x0A
+            i += 2
+        elseif b == 0xE2 && i+2 <= n && bytes[i+1] == 0x80 && bytes[i+2] == 0xA8
+            outlen += 1; out[outlen] = 0x0A
+            i += 3
+        else
+            outlen += 1; out[outlen] = b
+            i += 1
+        end
+    end
+    return resize!(out, outlen)
+end
 
 # Mostly for debugging
 Base.peek(o::Raw, n::Int) = String(view(o.data[o.pos+o.len+1:min(end, o.pos + o.len + n + 1)]))
@@ -146,7 +181,6 @@ function get_attributes(data, i, j)
     out = OrderedDict{String,String}()
     while !isnothing(i) && i < j
         key, i = get_name(data, i)
-        #haskey(out, key) && error("Duplicate attribute name found: $key") # would this be useful?
         # get quotechar the value is wrapped in (either ' or ")
         i = findnext(x -> x === UInt8('"') || x === UInt8('''), data, i + 1)
         quotechar = data[i]
@@ -566,3 +600,4 @@ function prev_no_xml_space(o::Raw) # same as v0.3.5
     end
     return Raw(type, depth, i, j - i, data, ctx, has_xml_space)
 end
+
