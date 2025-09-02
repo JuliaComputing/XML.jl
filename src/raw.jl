@@ -433,7 +433,7 @@ function next_no_xml_space(o::Raw) # same as v0.3.5
     type = o.type
     has_xml_space = o.has_xml_space
     ctx = [false]
-    i = findnext(!isspace, data, i)
+    i = findnext(!xml_isspace, data, i)
     if isnothing(i)
         return nothing
     end
@@ -445,7 +445,7 @@ function next_no_xml_space(o::Raw) # same as v0.3.5
     if c !== '<'
         type = RawText
         j = findnext(==(UInt8('<')), data, i) - 1
-        j = findprev(!isspace, data, j)   # "rstrip"
+        j = findprev(!xml_isspace, data, j)   # "rstrip"
     elseif c === '<'
         c2 = Char(o.data[i+1])
         if c2 === '!'
