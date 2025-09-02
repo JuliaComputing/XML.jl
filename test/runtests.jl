@@ -117,7 +117,6 @@ end
 
     @testset "next and prev" begin
         @test XML.prev(doc[1]) == data # can't use === here because prev returns a copy of ctx
-        @test XML.prev(doc[1]) == data # can't use === here because prev returns a copy of ctx
         @test prev(data) === nothing
         @test XML.next(doc[end]) === nothing
 
@@ -429,19 +428,18 @@ end
         @test XML.value(d2[1][6][1]) == "  after default gap  "
         @test XML.value(d2[1][7]) == "\n"
     end
-
-#    @testset "XML whitespace vs Unicode whitespace" begin
-#        nbsp = "\u00A0"
-#        s = """<root>
-#                 <a>  x\t\n  </a>
-#                 <b>$(nbsp) y $(nbsp)</b>
-#                 <c xml:space="default">$(nbsp)  z  $(nbsp)</c>
-#               </root>"""
-#        d = XML.parse(XML.Node, s)
-#        @test XML.value(d[1][1][1]) == "x"
-#        @test XML.value(d[1][2][1]) == "$(nbsp) y $(nbsp)"
-#        @test XML.value(d[1][3][1]) == "$(nbsp)  z  $(nbsp)"
-#    end
+    @testset "XML whitespace vs Unicode whitespace" begin
+        nbsp = "\u00A0"
+        s = """<root>
+                 <a>  x\t\n  </a>
+                 <b>$(nbsp) y $(nbsp)</b>
+                 <c xml:space="default">$(nbsp)  z  $(nbsp)</c>
+               </root>"""
+        d = XML.parse(XML.Node, s)
+        @test XML.value(d[1][1][1]) == "x"
+        @test XML.value(d[1][2][1]) == "$(nbsp) y $(nbsp)"
+        @test XML.value(d[1][3][1]) == "$(nbsp)  z  $(nbsp)"
+    end
 
     @testset "CDATA/Comment/PI boundaries" begin
         s = """<root>
@@ -486,17 +484,21 @@ end
         @test XML.value(d[1][1]) == "a"
     end
 
-#    @testset "entities expanding to whitespace" begin
-#        s = """<root>
-#                 <a> &#x20; a &#x0A; </a>
-#                 <b xml:space="preserve">&#x20; b &#x0A;</b>
-#                 <c>&#xA0;c&#xA0;</c>
-#               </root>"""
-#        d = XML.parse(XML.Node, s)
-#        @test XML.value(d[1][1][1]) == "a"
-#        @test XML.value(d[1][2][1]) == "  b \n"
-#        @test XML.value(d[1][3][1]) == "\u00A0c\u00A0"
-#    end
+    @testset "entities expanding to whitespace" begin
+        chr1="\u0020"
+        chr2="\u000A"
+        chr3="\u00A0"
+        
+        s = """<root>
+                 <a> $(chr1) a $(chr2) </a>
+                 <b xml:space="preserve">$(chr1) b $(chr2)</b>
+                 <c>$(chr3)c$(chr3)</c>
+               </root>"""
+        d = XML.parse(XML.Node, s)
+        @test XML.value(d[1][1][1]) == "a"
+        @test XML.value(d[1][2][1]) == "  b \n"
+        @test XML.value(d[1][3][1]) == "$(chr3)c$(chr3)"
+    end
 
     @testset "invalid values and placement" begin
         s_bad = """<root><x xml:space="weird"> t </x></root>"""
@@ -535,23 +537,22 @@ end
         @test reverse(back)[2:end] == toks[1:end-1]
     end
 
-#    @testset "write/read roundtrip extremes" begin
-    # XML.write doesn't respect xml:space="preserve" in the current implementation so roundtrip isn't possible.
-#        xml = """<root>
-#                   <p xml:space="preserve">    </p>
-#                   <q>   </q>
-#                   <r xml:space="default">  r  </r>
-#                   <s xml:space="preserve"> pre <t/> post </s>
-#                 </root>"""
-#        n = XML.parse(XML.Node, xml)
-#        io = IOBuffer(); XML.write(io, n)
-#        n2 = XML.parse(XML.Node, String(take!(io)))
-#        @test n == n2
-#        @test XML.write(n2[1][1]) == "<p xml:space=\"preserve\">    </p>"
-#        @test XML.write(n2[1][2]) == "<q/>"
-#        @test XML.value(n2[1][3][1]) == "r"
-#        @test XML.write(n2[1][4]) == "<s xml:space=\"preserve\"> pre <t/> post </s>"
-#   end
+    @testset "write/read roundtrip extremes" begin
+        xml = """<root>
+                   <p xml:space="preserve">    </p>
+                   <q>   </q>
+                   <r xml:space="default">  r  </r>
+                   <s xml:space="preserve"> pre <t/> post </s>
+                 </root>"""
+        n = XML.parse(XML.Node, xml)
+        io = IOBuffer(); XML.write(io, n)
+        n2 = XML.parse(XML.Node, String(take!(io)))
+        @test n == n2
+        @test XML.write(n2[1][1]) == "<p xml:space=\"preserve\">    </p>"
+        @test XML.write(n2[1][2]) == "<q/>"
+        @test XML.value(n2[1][3][1]) == "r"
+        @test XML.write(n2[1][4]) == "<s xml:space=\"preserve\"> pre <t/> post </s>"
+   end
 
     @testset "self-closing/empty/whitespace-only children" begin
         s = """<root>
@@ -576,6 +577,58 @@ end
         @test a < 500_000  # tune for CI
     end
 
+end
+
+#-----------------------------------------------------------------------------# Normalize_newlines
+# Helper to make writing tests easier
+to_bytes(s) = Vector{UInt8}(s)
+from_bytes(b) = String(b)
+
+@testset "normalize_newlines" begin
+    # 1. Lone CR -> LF
+    @test XML.normalize_newlines(to_bytes("a\rb")) == to_bytes("a\nb")
+
+    # 2. CRLF -> LF
+    @test XML.normalize_newlines(to_bytes("a\r\nb")) == to_bytes("a\nb")
+
+    # 3. CR NEL (0x85) -> LF
+    @test XML.normalize_newlines(UInt8[0x61, 0x0D, 0x85, 0x62]) == to_bytes("a\nb")
+
+    # 4. NEL (U+0085) UTF-8 form 0xC2 0x85 -> LF
+    @test XML.normalize_newlines(UInt8[0x61, 0xC2, 0x85, 0x62]) == to_bytes("a\nb")
+
+    # 5. LINE SEPARATOR (U+2028) UTF-8 form 0xE2 0x80 0xA8 -> LF
+    @test XML.normalize_newlines(UInt8[0x61, 0xE2, 0x80, 0xA8, 0x62]) == to_bytes("a\nb")
+
+    # 6. Mixed newline types in one string
+    mixed = UInt8[0x61, 0x0D, 0x0A, 0x62, 0xC2, 0x85, 0x63, 0xE2, 0x80, 0xA8, 0x64, 0x0D, 0x65]
+    expected = to_bytes("a\nb\nc\nd\ne")
+    @test XML.normalize_newlines(mixed) == expected
+
+    # 7. Consecutive CRs
+    @test XML.normalize_newlines(to_bytes("a\r\rb")) == to_bytes("a\n\nb")
+
+    # 8. Leading/trailing newlines
+    @test XML.normalize_newlines(to_bytes("\rabc\r")) == to_bytes("\nabc\n")
+
+    # 9. Empty input
+    @test XML.normalize_newlines(UInt8[]) == UInt8[]
+
+    # 10. No newline characters
+    @test XML.normalize_newlines(to_bytes("abcdef")) == to_bytes("abcdef")
+
+    # 11. Unicode safety: multi-byte chars around newlines
+    s = "α\r\nβ"  # α = 0xCE 0xB1, β = 0xCE 0xB2
+    @test XML.normalize_newlines(to_bytes(s)) == to_bytes("α\nβ")
+
+    # 12. Boundary case: CR at end of buffer
+    @test XML.normalize_newlines(UInt8[0x61, 0x0D]) == to_bytes("a\n")
+
+    # 13. Boundary case: 0xC2 at end (incomplete UTF-8 NEL)
+    @test XML.normalize_newlines(UInt8[0x61, 0xC2]) == UInt8[0x61, 0xC2]
+
+    # 14. Boundary case: 0xE2 0x80 at end (incomplete LINE SEPARATOR)
+    @test XML.normalize_newlines(UInt8[0x61, 0xE2, 0x80]) == UInt8[0x61, 0xE2, 0x80]
 end
 
 #-----------------------------------------------------------------------------# roundtrip
@@ -642,3 +695,4 @@ end
     xyz  = XML.Element("point"; kw...)
     @test collect(keys(attributes(xyz))) == string.(collect('a':'z'))
 end
+
