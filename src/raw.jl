@@ -329,7 +329,11 @@ function parent(o::Raw)
 end
 
 #-----------------------------------------------------------------------------# next Raw
-isspace(x::UInt8) = Base.isspace(Char(x))
+# isspace(x::UInt8) = Base.isspace(Char(x))
+
+# XML whitespace per XML 1.0/1.1 production S:
+#   S ::= (#x20 | #x9 | #xD | #xA)+
+@inline xml_isspace(b::UInt8)::Bool = (b == 0x20) | (b == 0x09) | (b == 0x0A) | (b == 0x0D)
 
 """
     next(node) --> typeof(node) or Nothing
