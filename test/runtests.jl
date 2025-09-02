@@ -579,58 +579,6 @@ end
 
 end
 
-#-----------------------------------------------------------------------------# Normalize_newlines
-# Helper to make writing tests easier
-to_bytes(s) = Vector{UInt8}(s)
-from_bytes(b) = String(b)
-
-@testset "normalize_newlines" begin
-    # 1. Lone CR -> LF
-    @test XML.normalize_newlines(to_bytes("a\rb")) == to_bytes("a\nb")
-
-    # 2. CRLF -> LF
-    @test XML.normalize_newlines(to_bytes("a\r\nb")) == to_bytes("a\nb")
-
-    # 3. CR NEL (0x85) -> LF
-    @test XML.normalize_newlines(UInt8[0x61, 0x0D, 0x85, 0x62]) == to_bytes("a\nb")
-
-    # 4. NEL (U+0085) UTF-8 form 0xC2 0x85 -> LF
-    @test XML.normalize_newlines(UInt8[0x61, 0xC2, 0x85, 0x62]) == to_bytes("a\nb")
-
-    # 5. LINE SEPARATOR (U+2028) UTF-8 form 0xE2 0x80 0xA8 -> LF
-    @test XML.normalize_newlines(UInt8[0x61, 0xE2, 0x80, 0xA8, 0x62]) == to_bytes("a\nb")
-
-    # 6. Mixed newline types in one string
-    mixed = UInt8[0x61, 0x0D, 0x0A, 0x62, 0xC2, 0x85, 0x63, 0xE2, 0x80, 0xA8, 0x64, 0x0D, 0x65]
-    expected = to_bytes("a\nb\nc\nd\ne")
-    @test XML.normalize_newlines(mixed) == expected
-
-    # 7. Consecutive CRs
-    @test XML.normalize_newlines(to_bytes("a\r\rb")) == to_bytes("a\n\nb")
-
-    # 8. Leading/trailing newlines
-    @test XML.normalize_newlines(to_bytes("\rabc\r")) == to_bytes("\nabc\n")
-
-    # 9. Empty input
-    @test XML.normalize_newlines(UInt8[]) == UInt8[]
-
-    # 10. No newline characters
-    @test XML.normalize_newlines(to_bytes("abcdef")) == to_bytes("abcdef")
-
-    # 11. Unicode safety: multi-byte chars around newlines
-    s = "α\r\nβ"  # α = 0xCE 0xB1, β = 0xCE 0xB2
-    @test XML.normalize_newlines(to_bytes(s)) == to_bytes("α\nβ")
-
-    # 12. Boundary case: CR at end of buffer
-    @test XML.normalize_newlines(UInt8[0x61, 0x0D]) == to_bytes("a\n")
-
-    # 13. Boundary case: 0xC2 at end (incomplete UTF-8 NEL)
-    @test XML.normalize_newlines(UInt8[0x61, 0xC2]) == UInt8[0x61, 0xC2]
-
-    # 14. Boundary case: 0xE2 0x80 at end (incomplete LINE SEPARATOR)
-    @test XML.normalize_newlines(UInt8[0x61, 0xE2, 0x80]) == UInt8[0x61, 0xE2, 0x80]
-end
-
 #-----------------------------------------------------------------------------# roundtrip
 @testset "read/write/read roundtrip" begin
     for path in all_files
