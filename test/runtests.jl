@@ -147,13 +147,13 @@ end
         @test text_content == "hello"
         n=XML.next(n)
         text_content = XML.write(n)
-        @test text_content == "<text3 xml:space=\"preserve\">\n    hello  \n  <text3b>  preserve  </text3b>\n</text3>"
+        @test text_content == "<text3 xml:space=\"preserve\">  hello  <text3b>  preserve  </text3b></text3>"
         n=XML.prev(n)
         text_content = XML.write(n)
         @test text_content == "hello"
         n=XML.next(n)
         text_content = XML.write(n)
-        @test text_content == "<text3 xml:space=\"preserve\">\n    hello  \n  <text3b>  preserve  </text3b>\n</text3>"
+        @test text_content == "<text3 xml:space=\"preserve\">  hello  <text3b>  preserve  </text3b></text3>"
         n=XML.next(n)
         text_content = XML.write(n)
         @test text_content == "  hello  "
@@ -183,13 +183,13 @@ end
         @test text_content == "  hello  "
         n=XML.prev(n)
         text_content = XML.write(n)
-        @test text_content == "<text3 xml:space=\"preserve\">\n    hello  \n  <text3b>  preserve  </text3b>\n</text3>"
+        @test text_content == "<text3 xml:space=\"preserve\">  hello  <text3b>  preserve  </text3b></text3>"
         n=XML.next(n)
         text_content = XML.write(n)
         @test text_content == "  hello  "
         n=XML.prev(n)
         text_content = XML.write(n)
-        @test text_content == "<text3 xml:space=\"preserve\">\n    hello  \n  <text3b>  preserve  </text3b>\n</text3>"
+        @test text_content == "<text3 xml:space=\"preserve\">  hello  <text3b>  preserve  </text3b></text3>"
         n=XML.prev(n)
         text_content = XML.write(n)
         @test text_content == "hello"
@@ -201,7 +201,7 @@ end
         @test text_content == "<text/>"
         n=XML.prev(n)
         text_content = XML.write(n)
-        @test text_content == "<root>\n  <text/>\n  <text2>hello</text2>\n  <text3 xml:space=\"preserve\">\n      hello  \n    <text3b>  preserve  </text3b>\n  </text3>\n  <text4 xml:space=\"preserve\"/>\n  <text5/>\n</root>"
+        @test text_content == "<root>\n  <text/>\n  <text2>hello</text2>\n  <text3 xml:space=\"preserve\">  hello  <text3b>  preserve  </text3b></text3>\n  <text4 xml:space=\"preserve\"/>\n  <text5/>\n</root>"
     end
 
     @testset "depth and parent" begin
