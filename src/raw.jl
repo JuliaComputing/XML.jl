@@ -425,7 +425,7 @@ function next_xml_space(o::Raw)
     end
     return Raw(type, depth, i, j - i, data, ctx, has_xml_space)
 end
-#
+
 function next_no_xml_space(o::Raw) # same as v0.3.5
     i = o.pos + o.len + 1
     depth = o.depth

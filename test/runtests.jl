@@ -117,6 +117,7 @@ end
 
     @testset "next and prev" begin
         @test XML.prev(doc[1]) == data # can't use === here because prev returns a copy of ctx
+        @test XML.prev(doc[1]) == data # can't use === here because prev returns a copy of ctx
         @test prev(data) === nothing
         @test XML.next(doc[end]) === nothing
 
