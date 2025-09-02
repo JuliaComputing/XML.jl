@@ -357,7 +357,7 @@ function next_xml_space(o::Raw)
     has_xml_space = o.has_xml_space
     ctx = copy(o.ctx)
     last_type = type
-    k = findnext(!isspace, data, i)
+    k = findnext(!xml_isspace, data, i)
     if isnothing(k)
         return nothing
     end
@@ -373,11 +373,11 @@ function next_xml_space(o::Raw)
     if c !== '<' || ctx[end] && c === '<' && b === ' ' && last_type === RawElementOpen && d === '/'
         type = RawText
         j = findnext(==(UInt8('<')), data, i) - 1
-        j = ctx[end] ? j : findprev(!isspace, data, j) # preserving whitespace if needed
+        j = ctx[end] ? j : findprev(!xml_isspace, data, j) # preserving whitespace if needed
         if last_type === RawElementClose || last_type === RawElementSelfClosed|| last_type === RawDocument
             # Maybe drop pure-whitespace inter-element text nodes?
             # (e.g. whitespace between a closing and an opening tag which would otherwise make an orphan text node)
-            #if all(isspace, @view data[i:j]) && depth > 1
+            #if all(xml_isspace, @view data[i:j]) && depth > 1
             #    return next(Raw(type, depth, j, 0, data, ctx, has_xml_space))
             #end
         end
@@ -518,7 +518,7 @@ function prev_no_xml_space(o::Raw) # same as v0.3.5
     ctx = has_xml_space ? copy(o.ctx) : [false]
     type === RawDocument && return nothing
     j = o.pos - 1
-    j = findprev(!isspace, data, j)
+    j = findprev(!xml_isspace, data, j)
     if isnothing(j)
         return Raw(data, has_xml_space, ctx)  # RawDocument
     end
@@ -527,7 +527,7 @@ function prev_no_xml_space(o::Raw) # same as v0.3.5
     if c !== '>' # text
         type = RawText
         i = findprev(==(UInt8('>')), data, j) + 1
-        i = findnext(!isspace, data, i)  # "lstrip"
+        i = findnext(!xml_isspace, data, i)  # "lstrip"
     elseif c === '>'
         c2 = Char(o.data[j-1])
         if c2 === '-'
