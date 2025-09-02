@@ -357,7 +357,7 @@ write(x; kw...) = (io = IOBuffer(); write(io, x; kw...); String(take!(io)))
 
 write(filename::AbstractString, x; kw...) = open(io -> write(io, x; kw...), filename, "w")
 
-function write(io::IO, x; indentsize::Int=2, depth::Int=1)
+function write(io::IO, x, ctx::Vector{Bool}=[false]; indentsize::Int=2, depth::Int=1)
     indent = ' ' ^ indentsize
     nodetype = XML.nodetype(x)
     tag = XML.tag(x)
@@ -365,48 +365,61 @@ function write(io::IO, x; indentsize::Int=2, depth::Int=1)
     children = XML.children(x)
 
     padding = indent ^ max(0, depth - 1)
-    print(io, padding)
+    !ctx[end] && print(io, padding)
+
     if nodetype === Text
         print(io, value)
+
     elseif nodetype === Element
+        push!(ctx, ctx[end])
+        update_ctx!(ctx, x)
         print(io, '<', tag)
         _print_attrs(io, x)
         print(io, isempty(children) ? '/' : "", '>')
         if !isempty(children)
             if length(children) == 1 && XML.nodetype(only(children)) === Text
-                write(io, only(children); indentsize=0)
+                write(io, only(children), ctx; indentsize=0)
                 print(io, "</", tag, '>')
             else
-                println(io)
+                !ctx[end] && println(io)
                 foreach(children) do child
-                    write(io, child; indentsize, depth = depth + 1)
-                    println(io)
+                    write(io, child, ctx; indentsize, depth=depth + 1)
+                    !ctx[end] && println(io)
                 end
-                print(io, padding, "</", tag, '>')
+                print(io, !ctx[end] ? padding : "", "</", tag, '>')
             end
         end
+        pop!(ctx)
+
     elseif nodetype === DTD
         print(io, "<!DOCTYPE ", value, '>')
+
     elseif nodetype === Declaration
         print(io, "<?xml")
         _print_attrs(io, x)
         print(io, "?>")
+
     elseif nodetype === ProcessingInstruction
         print(io, "<?", tag)
         _print_attrs(io, x)
         print(io, "?>")
+
     elseif nodetype === Comment
         print(io, "<!--", value, "-->")
+
     elseif nodetype === CData
         print(io, "<![CData[", value, "]]>")
+
     elseif nodetype === Document
         foreach(children) do child
-            write(io, child; indentsize)
-            println(io)
+            write(io, child, ctx; indentsize)
+            !ctx[end] && println(io)
         end
+
     else
         error("Unreachable case reached during XML.write")
     end
-end
 
 end
+
+end # module XML
