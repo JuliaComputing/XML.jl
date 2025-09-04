@@ -146,7 +146,6 @@ function get_attributes(data, i, j)
     out = OrderedDict{String,String}()
     while !isnothing(i) && i < j
         key, i = get_name(data, i)
-        #haskey(out, key) && error("Duplicate attribute name found: $key") # would this be useful?
         # get quotechar the value is wrapped in (either ' or ")
         i = findnext(x -> x === UInt8('"') || x === UInt8('''), data, i + 1)
         quotechar = data[i]
@@ -329,7 +328,11 @@ function parent(o::Raw)
 end
 
 #-----------------------------------------------------------------------------# next Raw
-isspace(x::UInt8) = Base.isspace(Char(x))
+# isspace(x::UInt8) = Base.isspace(Char(x))
+
+# XML whitespace per XML 1.0/1.1 production S:
+#   S ::= (#x20 | #x9 | #xD | #xA)+
+@inline xml_isspace(b::UInt8)::Bool = (b == 0x20) | (b == 0x09) | (b == 0x0A) | (b == 0x0D)
 
 """
     next(node) --> typeof(node) or Nothing
@@ -353,7 +356,7 @@ function next_xml_space(o::Raw)
     has_xml_space = o.has_xml_space
     ctx = copy(o.ctx)
     last_type = type
-    k = findnext(!isspace, data, i)
+    k = findnext(!xml_isspace, data, i)
     if isnothing(k)
         return nothing
     end
@@ -369,11 +372,11 @@ function next_xml_space(o::Raw)
     if c !== '<' || ctx[end] && c === '<' && b === ' ' && last_type === RawElementOpen && d === '/'
         type = RawText
         j = findnext(==(UInt8('<')), data, i) - 1
-        j = ctx[end] ? j : findprev(!isspace, data, j) # preserving whitespace if needed
+        j = ctx[end] ? j : findprev(!xml_isspace, data, j) # preserving whitespace if needed
         if last_type === RawElementClose || last_type === RawElementSelfClosed|| last_type === RawDocument
             # Maybe drop pure-whitespace inter-element text nodes?
             # (e.g. whitespace between a closing and an opening tag which would otherwise make an orphan text node)
-            #if all(isspace, @view data[i:j]) && depth > 1
+            #if all(xml_isspace, @view data[i:j]) && depth > 1
             #    return next(Raw(type, depth, j, 0, data, ctx, has_xml_space))
             #end
         end
@@ -421,7 +424,7 @@ function next_xml_space(o::Raw)
     end
     return Raw(type, depth, i, j - i, data, ctx, has_xml_space)
 end
-#
+
 function next_no_xml_space(o::Raw) # same as v0.3.5
     i = o.pos + o.len + 1
     depth = o.depth
@@ -429,7 +432,7 @@ function next_no_xml_space(o::Raw) # same as v0.3.5
     type = o.type
     has_xml_space = o.has_xml_space
     ctx = [false]
-    i = findnext(!isspace, data, i)
+    i = findnext(!xml_isspace, data, i)
     if isnothing(i)
         return nothing
     end
@@ -441,7 +444,7 @@ function next_no_xml_space(o::Raw) # same as v0.3.5
     if c !== '<'
         type = RawText
         j = findnext(==(UInt8('<')), data, i) - 1
-        j = findprev(!isspace, data, j)   # "rstrip"
+        j = findprev(!xml_isspace, data, j)   # "rstrip"
     elseif c === '<'
         c2 = Char(o.data[i+1])
         if c2 === '!'
@@ -514,7 +517,7 @@ function prev_no_xml_space(o::Raw) # same as v0.3.5
     ctx = has_xml_space ? copy(o.ctx) : [false]
     type === RawDocument && return nothing
     j = o.pos - 1
-    j = findprev(!isspace, data, j)
+    j = findprev(!xml_isspace, data, j)
     if isnothing(j)
         return Raw(data, has_xml_space, ctx)  # RawDocument
     end
@@ -523,7 +526,7 @@ function prev_no_xml_space(o::Raw) # same as v0.3.5
     if c !== '>' # text
         type = RawText
         i = findprev(==(UInt8('>')), data, j) + 1
-        i = findnext(!isspace, data, i)  # "lstrip"
+        i = findnext(!xml_isspace, data, i)  # "lstrip"
     elseif c === '>'
         c2 = Char(o.data[j-1])
         if c2 === '-'
@@ -562,3 +565,4 @@ function prev_no_xml_space(o::Raw) # same as v0.3.5
     end
     return Raw(type, depth, i, j - i, data, ctx, has_xml_space)
 end
+

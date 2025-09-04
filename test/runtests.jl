@@ -147,13 +147,13 @@ end
         @test text_content == "hello"
         n=XML.next(n)
         text_content = XML.write(n)
-        @test text_content == "<text3 xml:space=\"preserve\">\n    hello  \n  <text3b>  preserve  </text3b>\n</text3>"
+        @test text_content == "<text3 xml:space=\"preserve\">  hello  <text3b>  preserve  </text3b></text3>"
         n=XML.prev(n)
         text_content = XML.write(n)
         @test text_content == "hello"
         n=XML.next(n)
         text_content = XML.write(n)
-        @test text_content == "<text3 xml:space=\"preserve\">\n    hello  \n  <text3b>  preserve  </text3b>\n</text3>"
+        @test text_content == "<text3 xml:space=\"preserve\">  hello  <text3b>  preserve  </text3b></text3>"
         n=XML.next(n)
         text_content = XML.write(n)
         @test text_content == "  hello  "
@@ -183,13 +183,13 @@ end
         @test text_content == "  hello  "
         n=XML.prev(n)
         text_content = XML.write(n)
-        @test text_content == "<text3 xml:space=\"preserve\">\n    hello  \n  <text3b>  preserve  </text3b>\n</text3>"
+        @test text_content == "<text3 xml:space=\"preserve\">  hello  <text3b>  preserve  </text3b></text3>"
         n=XML.next(n)
         text_content = XML.write(n)
         @test text_content == "  hello  "
         n=XML.prev(n)
         text_content = XML.write(n)
-        @test text_content == "<text3 xml:space=\"preserve\">\n    hello  \n  <text3b>  preserve  </text3b>\n</text3>"
+        @test text_content == "<text3 xml:space=\"preserve\">  hello  <text3b>  preserve  </text3b></text3>"
         n=XML.prev(n)
         text_content = XML.write(n)
         @test text_content == "hello"
@@ -201,7 +201,7 @@ end
         @test text_content == "<text/>"
         n=XML.prev(n)
         text_content = XML.write(n)
-        @test text_content == "<root>\n  <text/>\n  <text2>hello</text2>\n  <text3 xml:space=\"preserve\">\n      hello  \n    <text3b>  preserve  </text3b>\n  </text3>\n  <text4 xml:space=\"preserve\"/>\n  <text5/>\n</root>"
+        @test text_content == "<root>\n  <text/>\n  <text2>hello</text2>\n  <text3 xml:space=\"preserve\">  hello  <text3b>  preserve  </text3b></text3>\n  <text4 xml:space=\"preserve\"/>\n  <text5/>\n</root>"
     end
 
     @testset "depth and parent" begin
@@ -428,19 +428,18 @@ end
         @test XML.value(d2[1][6][1]) == "  after default gap  "
         @test XML.value(d2[1][7]) == "\n"
     end
-
-#    @testset "XML whitespace vs Unicode whitespace" begin
-#        nbsp = "\u00A0"
-#        s = """<root>
-#                 <a>  x\t\n  </a>
-#                 <b>$(nbsp) y $(nbsp)</b>
-#                 <c xml:space="default">$(nbsp)  z  $(nbsp)</c>
-#               </root>"""
-#        d = XML.parse(XML.Node, s)
-#        @test XML.value(d[1][1][1]) == "x"
-#        @test XML.value(d[1][2][1]) == "$(nbsp) y $(nbsp)"
-#        @test XML.value(d[1][3][1]) == "$(nbsp)  z  $(nbsp)"
-#    end
+    @testset "XML whitespace vs Unicode whitespace" begin
+        nbsp = "\u00A0"
+        s = """<root>
+                 <a>  x\t\n  </a>
+                 <b>$(nbsp) y $(nbsp)</b>
+                 <c xml:space="default">$(nbsp)  z  $(nbsp)</c>
+               </root>"""
+        d = XML.parse(XML.Node, s)
+        @test XML.value(d[1][1][1]) == "x"
+        @test XML.value(d[1][2][1]) == "$(nbsp) y $(nbsp)"
+        @test XML.value(d[1][3][1]) == "$(nbsp)  z  $(nbsp)"
+    end
 
     @testset "CDATA/Comment/PI boundaries" begin
         s = """<root>
@@ -485,17 +484,21 @@ end
         @test XML.value(d[1][1]) == "a"
     end
 
-#    @testset "entities expanding to whitespace" begin
-#        s = """<root>
-#                 <a> &#x20; a &#x0A; </a>
-#                 <b xml:space="preserve">&#x20; b &#x0A;</b>
-#                 <c>&#xA0;c&#xA0;</c>
-#               </root>"""
-#        d = XML.parse(XML.Node, s)
-#        @test XML.value(d[1][1][1]) == "a"
-#        @test XML.value(d[1][2][1]) == "  b \n"
-#        @test XML.value(d[1][3][1]) == "\u00A0c\u00A0"
-#    end
+    @testset "entities expanding to whitespace" begin
+        chr1="\u0020"
+        chr2="\u000A"
+        chr3="\u00A0"
+        
+        s = """<root>
+                 <a> $(chr1) a $(chr2) </a>
+                 <b xml:space="preserve">$(chr1) b $(chr2)</b>
+                 <c>$(chr3)c$(chr3)</c>
+               </root>"""
+        d = XML.parse(XML.Node, s)
+        @test XML.value(d[1][1][1]) == "a"
+        @test XML.value(d[1][2][1]) == "  b \n"
+        @test XML.value(d[1][3][1]) == "$(chr3)c$(chr3)"
+    end
 
     @testset "invalid values and placement" begin
         s_bad = """<root><x xml:space="weird"> t </x></root>"""
@@ -534,23 +537,22 @@ end
         @test reverse(back)[2:end] == toks[1:end-1]
     end
 
-#    @testset "write/read roundtrip extremes" begin
-    # XML.write doesn't respect xml:space="preserve" in the current implementation so roundtrip isn't possible.
-#        xml = """<root>
-#                   <p xml:space="preserve">    </p>
-#                   <q>   </q>
-#                   <r xml:space="default">  r  </r>
-#                   <s xml:space="preserve"> pre <t/> post </s>
-#                 </root>"""
-#        n = XML.parse(XML.Node, xml)
-#        io = IOBuffer(); XML.write(io, n)
-#        n2 = XML.parse(XML.Node, String(take!(io)))
-#        @test n == n2
-#        @test XML.write(n2[1][1]) == "<p xml:space=\"preserve\">    </p>"
-#        @test XML.write(n2[1][2]) == "<q/>"
-#        @test XML.value(n2[1][3][1]) == "r"
-#        @test XML.write(n2[1][4]) == "<s xml:space=\"preserve\"> pre <t/> post </s>"
-#   end
+    @testset "write/read roundtrip extremes" begin
+        xml = """<root>
+                   <p xml:space="preserve">    </p>
+                   <q>   </q>
+                   <r xml:space="default">  r  </r>
+                   <s xml:space="preserve"> pre <t/> post </s>
+                 </root>"""
+        n = XML.parse(XML.Node, xml)
+        io = IOBuffer(); XML.write(io, n)
+        n2 = XML.parse(XML.Node, String(take!(io)))
+        @test n == n2
+        @test XML.write(n2[1][1]) == "<p xml:space=\"preserve\">    </p>"
+        @test XML.write(n2[1][2]) == "<q/>"
+        @test XML.value(n2[1][3][1]) == "r"
+        @test XML.write(n2[1][4]) == "<s xml:space=\"preserve\"> pre <t/> post </s>"
+   end
 
     @testset "self-closing/empty/whitespace-only children" begin
         s = """<root>
@@ -641,3 +643,4 @@ end
     xyz  = XML.Element("point"; kw...)
     @test collect(keys(attributes(xyz))) == string.(collect('a':'z'))
 end
+
