@@ -125,16 +125,94 @@ end
 tokens(file::AbstractString) = collect(Token(read(file)))
 tokens(io::IO) = collect(Token(read(io)))
 
+
+# function metadata(t::Token{T}) where {T}
+#     S = typeof(StringView(t))
+#     out = Pair{Vector{S}, Vector{Pair{S, S}}}[]
+#     tag_stack = S[]
+#     attrs = Vector{Pair{S, S}}[]
+#     for t in t
+#         if t.type ==
+#     end
+# end
+
 #-----------------------------------------------------------------------------# Node
-@enum Kind UNKNOWN CDATA COMMENT DECLARATION DOCUMENT FRAGMENT DTD ELEMENT PI TEXT
+@enum Kind begin
+    UNKNOWN
+    CDATA       # <![CDATA[ ... ]]>
+    COMMENT     # <!-- ... -->
+    DECLARATION # <?xml ... ?>
+    DOCUMENT
+    FRAGMENT
+    DTD         # <!DOCTYPE ... >
+    ELEMENT     # <element> ... </element>
+    PI          # <?name ... ?>
+    TEXT        # between > and <
+end
 
 struct Node{T <: AbstractString}
     kind::Kind
-    preserve_space_stack::Vector{Bool}
     name::Union{T, Nothing}
     attributes::Union{Vector{Pair{T, T}}, Nothing}
     value::Union{T, Nothing}
     children::Union{Vector{Node{T}}, Nothing}
+end
+
+
+function get_attributes(t::Token)
+    @assert t.type in (TAGSTART_TOKEN, DECL_TOKEN)
+    S = typeof(StringView(t))
+    attributes = Pair{S, S}[]
+    k::Union{S, Nothing} = nothing
+    v::Union{S, Nothing} = nothing
+    for t2 in t
+        if t2.type == ATTRKEY_TOKEN
+            k = StringView(t2)
+        elseif t2.type == ATTRVAL_TOKEN
+            v = StringView(t2)[2:end-1]
+            push!(attributes, k => v)
+        elseif t2.type in (TAGEND_TOKEN, TAGSELFCLOSE_TOKEN)
+            break
+        end
+    end
+    return attributes
+end
+
+
+function parse(t::Token, preserve_space_stack = Bool[false])
+    sv = StringView(t)
+    S = typeof(sv)
+    kind = t.type == TAGSTART_TOKEN ? ELEMENT :
+        t.type == TEXT_TOKEN ? TEXT :
+        t.type == COMMENT_TOKEN ? COMMENT :
+        t.type == CDATA_TOKEN ? CDATA :
+        t.type == DECL_TOKEN ? DECLARATION :
+        t.type == DTD_TOKEN ? DTD :
+        t.type == PI_TOKEN ? PI :
+        error("Parsing a Token must have type TAGSTART_TOKEN, TEXT_TOKEN, COMMENT_TOKEN, CDATA_TOKEN, DECL_TOKEN, DTD_TOKEN, or PI_TOKEN.  Got $(t.type) instead.")
+    if kind == ELEMENT
+        name = sv[2:end]
+        attributes = get_attributes(t)
+        return Node{S}(kind, name, attributes, nothing, children)
+    elseif kind == TEXT
+        return Node{S}(nothing, nothing, nothing, sv, nothing)
+    elseif kind == COMMENT
+        return Node{S}(nothing, nothing, nothing, sv[5:end-3], nothing)
+    elseif kind == CDATA
+        return Node{S}(nothing, nothing, nothing, sv[9:end-3], nothing)
+    elseif kind == DECLARATION
+        attributes = get_attributes(t)
+        return Node{S}(kind, nothing, attributes, nothing, nothing)
+    elseif kind == PI
+        j = findnext(' ', sv, 3)
+        target = sv[3:j-1]
+        content = sv[j+1:end-2]
+        return Node{S}(kind, target, nothing, content, nothing)
+    elseif kind == DTD
+        j = findnext(' ', sv, 10)
+        name = sv[10:j-1]
+        return Node{S}(kind, name, nothing, sv[j+1:end-3], nothing)
+    end
 end
 
 
