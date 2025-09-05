@@ -1,40 +1,60 @@
 using XML, Test
 
-using XML: is_next, Text
 
-#-----------------------------------------------------------------------------# Text
-@testset "Text" begin
-    s = " Test! "
-    @test read_xml(s, Text) == Text(" Test! ")
-    @test is_next(s, Text)
-    @test !is_next("<tag>text</tag>", Text)
-    @test XML.roundtrip(Text(" test "))
+TEST_FILES = filter(readdir(joinpath(@__DIR__, "data"); join=true)) do file
+    endswith(file, r".xml|.kml|.xsd")
 end
 
-#-----------------------------------------------------------------------------# Comment
-@testset "Comment" begin
-    s = "<!-- Test! -->"
-    @test read_xml(s, Comment) == Comment(" Test! ")
-    @test is_next(s, Comment)
-    @test !is_next(" <!--", Comment)
-    @test XML.roundtrip(Comment(" test "))
+#-----------------------------------------------------------------------------# Token
+@testset "Token" begin
+    @testset "Tokenizer covers all bytes of file" begin
+        for file in TEST_FILES
+            @info "Token: $file"
+            toks = tokens(file)
+            i = 1
+            for tok in toks
+                @test tok.i == i
+                i = tok.j + 1
+            end
+        end
+    end
 end
 
-#-----------------------------------------------------------------------------# CData
-@testset "CData" begin
-    s = "<![CDATA[ Test! ]]>"
-    @test read_xml(s, CData) == CData(" Test! ")
-    @test is_next(s, CData)
-    @test !is_next(" $s", CData)
-    @test XML.roundtrip(CData(" Test!"))
-end
+# using XML: is_next, Text
+
+# #-----------------------------------------------------------------------------# Text
+# @testset "Text" begin
+#     s = " Test! "
+#     @test read_xml(s, Text) == Text(" Test! ")
+#     @test is_next(s, Text)
+#     @test !is_next("<tag>text</tag>", Text)
+#     @test XML.roundtrip(Text(" test "))
+# end
+
+# #-----------------------------------------------------------------------------# Comment
+# @testset "Comment" begin
+#     s = "<!-- Test! -->"
+#     @test read_xml(s, Comment) == Comment(" Test! ")
+#     @test is_next(s, Comment)
+#     @test !is_next(" <!--", Comment)
+#     @test XML.roundtrip(Comment(" test "))
+# end
+
+# #-----------------------------------------------------------------------------# CData
+# @testset "CData" begin
+#     s = "<![CDATA[ Test! ]]>"
+#     @test read_xml(s, CData) == CData(" Test! ")
+#     @test is_next(s, CData)
+#     @test !is_next(" $s", CData)
+#     @test XML.roundtrip(CData(" Test!"))
+# end
 
 
-#-----------------------------------------------------------------------------# ProcessingInstruction
-@testset "ProcessingInstruction" begin
-    s = "<?target data1 data2 data3?>"
-    @test read_xml(s, ProcessingInstruction) == ProcessingInstruction("target", "data1 data2 data3")
-end
+# #-----------------------------------------------------------------------------# ProcessingInstruction
+# @testset "ProcessingInstruction" begin
+#     s = "<?target data1 data2 data3?>"
+#     @test read_xml(s, ProcessingInstruction) == ProcessingInstruction("target", "data1 data2 data3")
+# end
 
 # using XML
 # using XML: Document, Element, Declaration, Comment, CData, DTD, ProcessingInstruction, Text, escape, unescape, OrderedDict, h

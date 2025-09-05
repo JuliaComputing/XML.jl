@@ -1,188 +1,372 @@
 module XML
 
-using StyledStrings
+using StyledStrings, StringViews
 
-export
-    read_xml, write_xml,
-    Text, Comment, CData, ProcessingInstruction, Element, DTD, Document, Fragment
+export tokens, escape, unescape
 
 #-----------------------------------------------------------------------------# escape/unescape
 const escape_chars = ('&' => "&amp;", '<' => "&lt;", '>' => "&gt;", "'" => "&apos;", '"' => "&quot;")
 unescape(x::AbstractString) = replace(x, reverse.(escape_chars)...)
 escape(x::AbstractString) = replace(x, escape_chars...)
 
-#-----------------------------------------------------------------------------# utils
-function roundtrip(x)
-    io = IOBuffer()
-    write_xml(io, x)
-    seekstart(io)
-    return x == read_xml(io, typeof(x))
+
+#-----------------------------------------------------------------------------# Token
+@enum TokenType begin
+    UNKNOWN_TOKEN       # ?
+    TAGSTART_TOKEN      # <tag
+    TAGEND_TOKEN        # >
+    TAGCLOSE_TOKEN      # </tag>
+    TAGSELFCLOSE_TOKEN  # />
+    EQUALS_TOKEN        # =
+    ATTRKEY_TOKEN       # attr
+    ATTRVAL_TOKEN       # "value"
+    TEXT_TOKEN          # between > and <
+    PI_TOKEN            # <? ... ?>
+    DECL_TOKEN          # <?xml ... ?>
+    COMMENT_TOKEN       # <!-- ... -->
+    CDATA_TOKEN         # <![CDATA[ ... ]]>
+    DTD_TOKEN           # <!DOCTYPE ... >
+    WS_TOKEN            # " \t\n\r"
 end
 
-function peek_str(io::IO, n::Integer)
-    pos = position(io)
-    out = String(read(io, n))
-    seek(io, pos)
-    return out
-end
-
-is_name_start_char(x::Char) = isletter(x) || x == ':' || x == '_'
-
-#-----------------------------------------------------------------------------# XMLNode
-abstract type XMLNode end
-
-write_xml(x) = sprint(write_xml, x)
-
-read_xml(str::AbstractString, ::Type{T}) where {T <: XMLNode} = read_xml(IOBuffer(str), T)
-
-is_next(s::AbstractString, ::Type{T}) where {T <: XMLNode} = is_next(IOBuffer(s), T)
-
-function Base.show(io::IO, o::T) where {T <: XMLNode}
-    str = sprint(write_xml, o)
-    # TODO: more compact representation
-    print(io, T.name.name, ": ", styled"{bright_black:$str}")
-end
-
-#-----------------------------------------------------------------------------# Text
-"""
-    Text(value::AbstractString)
-    # value
-"""
-struct Text{T <: AbstractString} <: XMLNode
-    value::T
-end
-write_xml(io::IO, o::Text) = print(io, o.value)
-read_xml(io::IO, o::Type{T}) where {T <: Text} = Text(readuntil(io, '<'))
-is_next(io::IO, o::Type{T}) where {T <: Text} = peek(io, Char) != '<'
-
-#-----------------------------------------------------------------------------# Comment
-"""
-    Comment(value::AbstractString)
-    # <!-- value -->
-"""
-struct Comment{T <: AbstractString} <: XMLNode
-    value::T
-end
-write_xml(io::IO, o::Comment) = print(io, "<!--", o.value, "-->")
-function read_xml(io::IO, ::Type{T}) where {T <: Comment}
-    read(io, 4) # <!--
-    return Comment(readuntil(io, "-->"))
-end
-is_next(io::IO, ::Type{T}) where {T <: Comment} = peek_str(io, 4) == "<!--"
-
-
-#-----------------------------------------------------------------------------# CData
-"""
-    CData(value::AbstractString)
-    # <![CDATA[ value ]]>
-"""
-struct CData{T <: AbstractString} <: XMLNode
-    value::T
-end
-write_xml(io::IO, o::CData) = print(io, "<![CDATA[", o.value, "]]>")
-function read_xml(io::IO, ::Type{T}) where {T <: CData}
-    read(io, 9)  # <![CDATA[
-    CData(readuntil(io, "]]>"))
-end
-is_next(io::IO, ::Type{T}) where {T <: CData} = peek_str(io, 9) == "<![CDATA["
-
-
-#-----------------------------------------------------------------------------# ProcessingInstruction
-"""
-    ProcessingInstruction(target::AbstractString, data::AbstractString)
-    # <?target data?>
-"""
-struct ProcessingInstruction{T <: AbstractString} <: XMLNode
-    target::T
+struct Token{T <: AbstractVector{UInt8}}
     data::T
+    type::TokenType
+    in_tag::Bool
+    stack::Vector{Bool}  # whether we are inside a section of `xml:space="preserve"`
+    i::Int
+    j::Int
 end
-ProcessingInstruction(target::T; kw...) where {T} = ProcessingInstruction(target, join([T("$k=\"$v\"") for (k, v) in kw]))
-write_xml(io::IO, o::ProcessingInstruction) = print(io, "<?", o.target, " ", o.data, "?>")
-function read_xml(io::IO, ::Type{T}) where {T <: ProcessingInstruction}
-    read(io, 2)  # <?
-    target = readuntil(io, ' ')
-    data = readuntil(io, "?>")
-    return ProcessingInstruction(target, data)
-end
-is_next(io::IO, ::Type{T}) where {T <: ProcessingInstruction} = peek_str(io, 2) == "<?" && peek_str(io, 5) != "<?xml"
+Token(data) = Token(data, UNKNOWN_TOKEN, false, [false], 1, 0)
+(t::Token)(type, in_tag, stack, j) = Token(t.data, type, in_tag, stack, t.i, j)
 
+# Add _ separator for large Ints
+format(x::Int) = replace(string(x), r"(\d)(?=(\d{3})+(?!\d))" => s"\1_")
 
-#-----------------------------------------------------------------------------# Declaration
-"""
-    Declaration(version = "1.0", encoding="UTF-8", standalone="no")
-    # <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-"""
-struct Declaration{T <: AbstractString} <: XMLNode
-    version::T
-    encoding::Union{Nothing, T}
-    standalone::Union{Nothing, Bool}
-end
-function write_xml(io::IO, o::Declaration)
-    print(io, "<?xml version=", repr(o.version))
-    !isnothing(o.encoding) && print(" encoding=", repr(o.encoding))
-    !isnothing(o.standalone) && print(" standalone=", repr(o.standalone ? "yes" : "no"))
-    print(io, "?>")
-end
-function read_xml(io::IO, ::Type{T}) where {T <: Declaration}
-    read(io, 5)  # <?xml
-    readuntil(io, "version")
-    readuntil(io, "=")
-    readuntil(io, '"')
-    version = readuntil(io, '"')
+function Base.show(io::IO, t::Token)
+    print(io, styled"{bright_yellow:$(rpad(t.type, 19))}", " ", format(t.i), " → ", format(t.j))
+    print(io, styled" {bright_black:($(Base.format_bytes(ncodeunits(StringView(t)))))}")
+    s = repr(StringView(t))[2:end-1]
+    t.in_tag ?
+        print(io, styled": {inverse:{bright_cyan:$s}}") :
+        print(io, styled": {inverse:{bright_green:$s}}")
 end
 
-is_next(io::IO, ::Type{T}) where {T <: Declaration} = peek_str(io, 2) == "<?" && peek_str(io, 5) == "<?xml"
+Base.view(t::Token) = view(t.data, t.i:t.j)
+StringViews.StringView(t::Token) = StringView(view(t))
 
+function next(t::Token)
+    t.j == length(t.data) && return nothing
+    t = Token(t.data, t.type, t.in_tag, t.stack, t.j + 1, length(t.data))
+    sv = StringView(t::Token)
+    c = sv[1]
 
-#-----------------------------------------------------------------------------# Element
-"""
-    Element(name, children...; attributes)
-    # <name attributes...> children... </name>
-"""
-struct Element{T} <: XMLNode
-    name::T
-    attributes::Vector{Pair{T, T}}
-    children::Vector{Union{Element{T}, Text{T}, CData{T}, Comment{T}}}
-end
-function write_xml(io::IO, o::Element)
-    print(io, '<', o.name)
-    for x in o.attributes
-        print(io, ' ', x[1], '=', repr(x[2]))
+    if t.in_tag
+        startswith(sv, '>') && return t(TAGEND_TOKEN, false, t.stack, t.i)
+        startswith(sv, "/>") && return t(TAGSELFCLOSE_TOKEN, false, t.stack, t.i + 1)
+        c == '"' && return t(ATTRVAL_TOKEN, true, t.stack, t.i + findnext('"', sv, 2) - 1)
+        c == ''' && return t(ATTRVAL_TOKEN, true, t.stack, t.i + findnext(''', sv, 2) - 1)
+        is_name_start_char(c) && return t(ATTRKEY_TOKEN, true, t.stack, t.i + findnext(!is_name_char, sv, 2) - 2)
+        c == '=' && return t(EQUALS_TOKEN, true, t.stack, t.i)
+    elseif c == '<'
+        c2 = sv[2]
+        is_name_start_char(c2) && return t(TAGSTART_TOKEN, true, t.stack, t.i + findnext(!is_name_char, sv, 2) - 2)
+        startswith(sv, "</") && return t(TAGCLOSE_TOKEN, false, t.stack, t.i + findnext('>', sv, 3) - 1)
+        startswith(sv, "<!--") && return t(COMMENT_TOKEN, false, t.stack, t.i + findnext("-->", sv, 5)[end] - 1)
+        startswith(sv, "<![CDATA[") && return t(CDATA_TOKEN, false, t.stack, t.i + findnext("]]>", sv, 10)[end] - 1)
+        startswith(sv, "<?xml") && return t(DECL_TOKEN, false, t.stack, t.i + findnext("?>", sv, 6)[end] - 1)
+        startswith(sv, "<?") && return t(PI_TOKEN, false, t.stack, t.i + findnext("?>", sv, 4)[end] - 1)
+        startswith(sv, "<!DOCTYPE") && return t(DTD_TOKEN, false, t.stack, t.i + findnext('>', sv, 10) - 1)
     end
-    print(io, '>')
-    for x in o.children
-        write_xml(io, x)
+    if is_ws(c)
+        j = findnext(!is_ws, sv, 2)
+        j = isnothing(j) ? length(t.data) : t.i + j - 2
+        return t(WS_TOKEN, t.in_tag, t.stack, j)
     end
-    print(io, "</", o.name, '>')
-end
-function read_xml(io::IO, ::Type{T}) where {T <: Element}
-    read(io, 1)
-    readuntil(io, )
-end
-function is_next(io::IO, ::Type{T}) where {T <: Element}
-    a, b = peek_str(io)
-    a == '<' && is_name_start_char(b)
+    return t(TEXT_TOKEN, false, t.stack, t.i + findnext('<', sv, 2) - 2)
 end
 
-#-----------------------------------------------------------------------------# DTD
-"""
-    DTD(value)
-    # <!DOCTYPE
-"""
-struct DTD{T} <: XMLNode
-    value::T
+is_ws(x::Char) = x == ' ' || x == '\t' || x == '\n' || x == '\r'
+
+function is_name_start_char(c::Char)
+    c == ':' || c == '_' ||
+    ('A' ≤ c ≤ 'Z') || ('a' ≤ c ≤ 'z') ||
+    ('\u00C0' ≤ c ≤ '\u00D6') ||
+    ('\u00D8' ≤ c ≤ '\u00F6') ||
+    ('\u00F8' ≤ c ≤ '\u02FF') ||
+    ('\u0370' ≤ c ≤ '\u037D') ||
+    ('\u037F' ≤ c ≤ '\u1FFF') ||
+    ('\u200C' ≤ c ≤ '\u200D') ||
+    ('\u2070' ≤ c ≤ '\u218F') ||
+    ('\u2C00' ≤ c ≤ '\u2FEF') ||
+    ('\u3001' ≤ c ≤ '\uD7FF') ||
+    ('\uF900' ≤ c ≤ '\uFDCF') ||
+    ('\uFDF0' ≤ c ≤ '\uFFFD') ||
+    ('\U00010000' ≤ c ≤ '\U000EFFFF')
+end
+function is_name_char(c::Char)
+    is_name_start_char(c) ||
+    c == '-' || c == '.' ||
+    ('0' ≤ c ≤ '9') ||
+    c == '\u00B7' ||
+    ('\u0300' ≤ c ≤ '\u036F') ||
+    ('\u203F' ≤ c ≤ '\u2040')
 end
 
-#-----------------------------------------------------------------------------# Document
-struct Document{T} <: XMLNode
-    prolog::Vector{Union{ProcessingInstruction{T}, DTD{T},  Declaration{T}, Comment{T}}}
-    root::Element{T}
+
+Base.IteratorSize(::Type{T}) where {T <: Token} = Base.SizeUnknown()
+Base.eltype(::Type{T}) where {S, T <: Token{S}} = T
+Base.isdone(o::Token{T}, t::Token{T}) where {T} = t.j == length(t.data)
+function Base.iterate(t::Token, state=t)
+    n = next(state)
+    isnothing(n) && return nothing
+    return (n, n)
 end
 
-#-----------------------------------------------------------------------------# Fragment
-struct Fragment{T} <: XMLNode
-    children::Vector{Union{Element{T}, Comment{T}, CData{T}, Text{T}}}
-end
+tokens(file::AbstractString) = collect(Token(read(file)))
+tokens(io::IO) = collect(Token(read(io)))
+
+
+# #-----------------------------------------------------------------------------# FileNode
+# @enum Kind UNKNOWN CDATA COMMENT DECLARATION DOCUMENT FRAGMENT DTD ELEMENT PI TEXT
+
+# struct TokenNode{T}
+#     tokens::Token{T}
+#     preserve::Vector{Bool}
+#     kind::Kind
+#     cursor::Int
+# end
+
+# function TokenNode(toks::Vector{Token{T}}) where {T}
+#     preserve = falses(length(toks))
+#     check_val = false
+#     for (i, t) in enumerate(toks)
+#         if t.type == ATTRKEY_TOKEN && StringView(t) == "xml:space"
+#             check_val = true
+#         elseif t.type == ATTRVAL_TOKEN && check_val
+#             s = @view StringView(t)[2:end-1]
+
+#         end
+
+#     end
+# end
+
+
+# """
+#     File(s::AbstractString)
+
+# Wrapper around `Vector{Token{T}}` with insignificant whitespace removed.
+# """
+# struct File{T}
+#     tokens::Token{T}
+# end
+
+# # Sequence we need to look out for:
+# #   - `ATTRKEY (xml:space) → WS? → EQUALS → WS? → ATTRVAL ("preserve | default")`
+# function File(s::AbstractString)
+#     toks = tokens(s)
+#     out = eltype(toks)[]
+#     preserve_space_stack = Bool[]
+#     for t in toks
+#         if isempty(preserve_space_stack)
+#             t.type != WS_TOKEN && push!(out, t)
+#         else
+
+#         end
+#     end
+#     return out
+# end
+
+
+#-----------------------------------------------------------------------------# Node
+# @enum Kind UNKNOWN CDATA COMMENT DECLARATION DOCUMENT FRAGMENT DTD ELEMENT PI TEXT
+
+# struct Node{T <: AbstractString}
+#     kind::Kind
+#     preserve_space_stack::Vector{Bool}
+#     name::Union{T, Nothing}
+#     attributes::Union{Vector{Pair{T, T}}, Nothing}
+#     value::Union{T, Nothing}
+#     children::Union{Vector{Node{T}}, Nothing}
+# end
+
+# function document(s::T) where {T <: AbstractString}
+#     out = Node{T}(DOCUMENT, Bool[], nothing, nothing, nothing, Node{T}[])
+# end
+
+
+# #-----------------------------------------------------------------------------# utils
+# function roundtrip(x)
+#     io = IOBuffer()
+#     write_xml(io, x)
+#     seekstart(io)
+#     return x == read_xml(io, typeof(x))
+# end
+
+# function peek_str(io::IO, n::Integer)
+#     pos = position(io)
+#     out = String(read(io, n))
+#     seek(io, pos)
+#     return out
+# end
+
+# is_name_start_char(x::Char) = isletter(x) || x == ':' || x == '_'
+
+# #-----------------------------------------------------------------------------# XMLNode
+# abstract type XMLNode end
+
+# write_xml(x) = sprint(write_xml, x)
+
+# read_xml(str::AbstractString, ::Type{T}) where {T <: XMLNode} = read_xml(IOBuffer(str), T)
+
+# is_next(s::AbstractString, ::Type{T}) where {T <: XMLNode} = is_next(IOBuffer(s), T)
+
+# function Base.show(io::IO, o::T) where {T <: XMLNode}
+#     str = sprint(write_xml, o)
+#     # TODO: more compact representation
+#     print(io, T.name.name, ": ", styled"{bright_black:$str}")
+# end
+
+# #-----------------------------------------------------------------------------# Text
+# """
+#     Text(value::AbstractString)
+#     # value
+# """
+# struct Text{T <: AbstractString} <: XMLNode
+#     value::T
+# end
+# write_xml(io::IO, o::Text) = print(io, o.value)
+# read_xml(io::IO, o::Type{T}) where {T <: Text} = Text(readuntil(io, '<'))
+# is_next(io::IO, o::Type{T}) where {T <: Text} = peek(io, Char) != '<'
+
+# #-----------------------------------------------------------------------------# Comment
+# """
+#     Comment(value::AbstractString)
+#     # <!-- value -->
+# """
+# struct Comment{T <: AbstractString} <: XMLNode
+#     value::T
+# end
+# write_xml(io::IO, o::Comment) = print(io, "<!--", o.value, "-->")
+# function read_xml(io::IO, ::Type{T}) where {T <: Comment}
+#     read(io, 4) # <!--
+#     return Comment(readuntil(io, "-->"))
+# end
+# is_next(io::IO, ::Type{T}) where {T <: Comment} = peek_str(io, 4) == "<!--"
+
+
+# #-----------------------------------------------------------------------------# CData
+# """
+#     CData(value::AbstractString)
+#     # <![CDATA[ value ]]>
+# """
+# struct CData{T <: AbstractString} <: XMLNode
+#     value::T
+# end
+# write_xml(io::IO, o::CData) = print(io, "<![CDATA[", o.value, "]]>")
+# function read_xml(io::IO, ::Type{T}) where {T <: CData}
+#     read(io, 9)  # <![CDATA[
+#     CData(readuntil(io, "]]>"))
+# end
+# is_next(io::IO, ::Type{T}) where {T <: CData} = peek_str(io, 9) == "<![CDATA["
+
+
+# #-----------------------------------------------------------------------------# ProcessingInstruction
+# """
+#     ProcessingInstruction(target::AbstractString, data::AbstractString)
+#     # <?target data?>
+# """
+# struct ProcessingInstruction{T <: AbstractString} <: XMLNode
+#     target::T
+#     data::T
+# end
+# ProcessingInstruction(target::T; kw...) where {T} = ProcessingInstruction(target, join([T("$k=\"$v\"") for (k, v) in kw]))
+# write_xml(io::IO, o::ProcessingInstruction) = print(io, "<?", o.target, " ", o.data, "?>")
+# function read_xml(io::IO, ::Type{T}) where {T <: ProcessingInstruction}
+#     read(io, 2)  # <?
+#     target = readuntil(io, ' ')
+#     data = readuntil(io, "?>")
+#     return ProcessingInstruction(target, data)
+# end
+# is_next(io::IO, ::Type{T}) where {T <: ProcessingInstruction} = peek_str(io, 2) == "<?" && peek_str(io, 5) != "<?xml"
+
+
+# #-----------------------------------------------------------------------------# Declaration
+# """
+#     Declaration(version = "1.0", encoding="UTF-8", standalone="no")
+#     # <?xml version="1.0" encoding="UTF-8" standalone="no"?>
+# """
+# struct Declaration{T <: AbstractString} <: XMLNode
+#     version::T
+#     encoding::Union{Nothing, T}
+#     standalone::Union{Nothing, Bool}
+# end
+# function write_xml(io::IO, o::Declaration)
+#     print(io, "<?xml version=", repr(o.version))
+#     !isnothing(o.encoding) && print(" encoding=", repr(o.encoding))
+#     !isnothing(o.standalone) && print(" standalone=", repr(o.standalone ? "yes" : "no"))
+#     print(io, "?>")
+# end
+# function read_xml(io::IO, ::Type{T}) where {T <: Declaration}
+#     read(io, 5)  # <?xml
+#     readuntil(io, "version")
+#     readuntil(io, "=")
+#     readuntil(io, '"')
+#     version = readuntil(io, '"')
+# end
+
+# is_next(io::IO, ::Type{T}) where {T <: Declaration} = peek_str(io, 2) == "<?" && peek_str(io, 5) == "<?xml"
+
+
+# #-----------------------------------------------------------------------------# Element
+# """
+#     Element(name, children...; attributes)
+#     # <name attributes...> children... </name>
+# """
+# struct Element{T} <: XMLNode
+#     name::T
+#     attributes::Vector{Pair{T, T}}
+#     children::Vector{Union{Element{T}, Text{T}, CData{T}, Comment{T}}}
+# end
+# function write_xml(io::IO, o::Element)
+#     print(io, '<', o.name)
+#     for x in o.attributes
+#         print(io, ' ', x[1], '=', repr(x[2]))
+#     end
+#     print(io, '>')
+#     for x in o.children
+#         write_xml(io, x)
+#     end
+#     print(io, "</", o.name, '>')
+# end
+# function read_xml(io::IO, ::Type{T}) where {T <: Element}
+#     read(io, 1)
+#     readuntil(io, )
+# end
+# function is_next(io::IO, ::Type{T}) where {T <: Element}
+#     a, b = peek_str(io)
+#     a == '<' && is_name_start_char(b)
+# end
+
+# #-----------------------------------------------------------------------------# DTD
+# """
+#     DTD(value)
+#     # <!DOCTYPE
+# """
+# struct DTD{T} <: XMLNode
+#     value::T
+# end
+
+# #-----------------------------------------------------------------------------# Document
+# struct Document{T} <: XMLNode
+#     prolog::Vector{Union{ProcessingInstruction{T}, DTD{T},  Declaration{T}, Comment{T}}}
+#     root::Element{T}
+# end
+
+# #-----------------------------------------------------------------------------# Fragment
+# struct Fragment{T} <: XMLNode
+#     children::Vector{Union{Element{T}, Comment{T}, CData{T}, Text{T}}}
+# end
 
 # #-----------------------------------------------------------------------------# printing
 # xml(x) = sprint(xml, x)
