@@ -33,12 +33,11 @@ struct Token{T <: AbstractVector{UInt8}}
     data::T
     type::TokenType
     in_tag::Bool
-    stack::Vector{Bool}  # whether we are inside a section of `xml:space="preserve"`
     i::Int
     j::Int
 end
-Token(data) = Token(data, UNKNOWN_TOKEN, false, [false], 1, 0)
-(t::Token)(type, in_tag, stack, j) = Token(t.data, type, in_tag, stack, t.i, j)
+Token(data) = Token(data, UNKNOWN_TOKEN, false, 1, 0)
+(t::Token)(type, in_tag, j) = Token(t.data, type, in_tag, t.i, j)
 
 # Add _ separator for large Ints
 format(x::Int) = replace(string(x), r"(\d)(?=(\d{3})+(?!\d))" => s"\1_")
@@ -57,33 +56,33 @@ StringViews.StringView(t::Token) = StringView(view(t))
 
 function next(t::Token)
     t.j == length(t.data) && return nothing
-    t = Token(t.data, t.type, t.in_tag, t.stack, t.j + 1, length(t.data))
+    t = Token(t.data, t.type, t.in_tag, t.j + 1, length(t.data))
     sv = StringView(t::Token)
     c = sv[1]
 
     if t.in_tag
-        startswith(sv, '>') && return t(TAGEND_TOKEN, false, t.stack, t.i)
-        startswith(sv, "/>") && return t(TAGSELFCLOSE_TOKEN, false, t.stack, t.i + 1)
-        c == '"' && return t(ATTRVAL_TOKEN, true, t.stack, t.i + findnext('"', sv, 2) - 1)
-        c == ''' && return t(ATTRVAL_TOKEN, true, t.stack, t.i + findnext(''', sv, 2) - 1)
-        is_name_start_char(c) && return t(ATTRKEY_TOKEN, true, t.stack, t.i + findnext(!is_name_char, sv, 2) - 2)
-        c == '=' && return t(EQUALS_TOKEN, true, t.stack, t.i)
+        startswith(sv, '>') && return t(TAGEND_TOKEN, false, t.i)
+        startswith(sv, "/>") && return t(TAGSELFCLOSE_TOKEN, false, t.i + 1)
+        c == '"' && return t(ATTRVAL_TOKEN, true, t.i + findnext('"', sv, 2) - 1)
+        c == ''' && return t(ATTRVAL_TOKEN, true, t.i + findnext(''', sv, 2) - 1)
+        is_name_start_char(c) && return t(ATTRKEY_TOKEN, true, t.i + findnext(!is_name_char, sv, 2) - 2)
+        c == '=' && return t(EQUALS_TOKEN, true, t.i)
     elseif c == '<'
         c2 = sv[2]
-        is_name_start_char(c2) && return t(TAGSTART_TOKEN, true, t.stack, t.i + findnext(!is_name_char, sv, 2) - 2)
-        startswith(sv, "</") && return t(TAGCLOSE_TOKEN, false, t.stack, t.i + findnext('>', sv, 3) - 1)
-        startswith(sv, "<!--") && return t(COMMENT_TOKEN, false, t.stack, t.i + findnext("-->", sv, 5)[end] - 1)
-        startswith(sv, "<![CDATA[") && return t(CDATA_TOKEN, false, t.stack, t.i + findnext("]]>", sv, 10)[end] - 1)
-        startswith(sv, "<?xml") && return t(DECL_TOKEN, false, t.stack, t.i + findnext("?>", sv, 6)[end] - 1)
-        startswith(sv, "<?") && return t(PI_TOKEN, false, t.stack, t.i + findnext("?>", sv, 4)[end] - 1)
-        startswith(sv, "<!DOCTYPE") && return t(DTD_TOKEN, false, t.stack, t.i + findnext('>', sv, 10) - 1)
+        is_name_start_char(c2) && return t(TAGSTART_TOKEN, true, t.i + findnext(!is_name_char, sv, 2) - 2)
+        startswith(sv, "</") && return t(TAGCLOSE_TOKEN, false, t.i + findnext('>', sv, 3) - 1)
+        startswith(sv, "<!--") && return t(COMMENT_TOKEN, false, t.i + findnext("-->", sv, 5)[end] - 1)
+        startswith(sv, "<![CDATA[") && return t(CDATA_TOKEN, false, t.i + findnext("]]>", sv, 10)[end] - 1)
+        startswith(sv, "<?xml ") && return t(DECL_TOKEN, false, t.i + findnext("?>", sv, 7)[end] - 1)
+        startswith(sv, "<?") && return t(PI_TOKEN, false, t.i + findnext("?>", sv, 4)[end] - 1)
+        startswith(sv, "<!DOCTYPE") && return t(DTD_TOKEN, false, t.i + findnext('>', sv, 10) - 1)
     end
     if is_ws(c)
         j = findnext(!is_ws, sv, 2)
         j = isnothing(j) ? length(t.data) : t.i + j - 2
-        return t(WS_TOKEN, t.in_tag, t.stack, j)
+        return t(WS_TOKEN, t.in_tag, j)
     end
-    return t(TEXT_TOKEN, false, t.stack, t.i + findnext('<', sv, 2) - 2)
+    return t(TEXT_TOKEN, false, t.i + findnext('<', sv, 2) - 2)
 end
 
 is_ws(x::Char) = x == ' ' || x == '\t' || x == '\n' || x == '\r'
@@ -125,6 +124,41 @@ end
 
 tokens(file::AbstractString) = collect(Token(read(file)))
 tokens(io::IO) = collect(Token(read(io)))
+
+#-----------------------------------------------------------------------------# Node
+@enum Kind UNKNOWN CDATA COMMENT DECLARATION DOCUMENT FRAGMENT DTD ELEMENT PI TEXT
+
+struct Node{T <: AbstractString}
+    kind::Kind
+    preserve_space_stack::Vector{Bool}
+    name::Union{T, Nothing}
+    attributes::Union{Vector{Pair{T, T}}, Nothing}
+    value::Union{T, Nothing}
+    children::Union{Vector{Node{T}}, Nothing}
+end
+
+
+# #-----------------------------------------------------------------------------# Lexer
+# # Iterates same tokens as Token...minus insignificant WS_TOKENs
+# struct Lexer{T <: AbstractVector{UInt8}}
+#     data::T
+# end
+
+# Base.IteratorSize(::Type{Lexer{T}}) where {T} = Base.SizeUnknown()
+# Base.eltype(::Type{Lexer{T}}) where {T} = Token{T}
+# Base.isdone(o::Lexer{T}, t::Token{T}) where {T} = t.j == length(t.data)
+# function Base.iterate(o::Lexer, (; token=Token(o.data), check_val=false, preserve_stack=[false]))
+#     n = next(token)
+#     isnothing(n) && return nothing
+#     if n.type == ATTRKEY_TOKEN && StringView(n) == "xml:space"
+#         state = (; token=n, check_val=true, preserve)
+#         return (n, state)
+#     elseif n.type == ATTRVAL_TOKEN && check_val
+#         s = @view StringView(n)[2:end-1]
+#         preserve = s == "preserve"
+#         state = (; token=n, check_val=false, preserve)
+#         return (n, state)
+# end
 
 
 # #-----------------------------------------------------------------------------# FileNode
