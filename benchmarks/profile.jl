@@ -165,8 +165,8 @@ row("EzXML StreamReader", @benchmark ezxml_stream($S))
 println("\n=== (2) FULL EXTRACTION — parse + pull every tag/text ===")
 row("XML.jl (String)",    @benchmark xml_extract($S, Node))
 row("XML.jl (SubString)", @benchmark xml_extract($S, SSNode))
-row("EzXML",              @benchmark (d[] = EzXML.parsexml($S); ezxml_walk(EzXML.root(d[]))) setup = (d = Ref{Any}(nothing)) teardown = (d[] === nothing || finalize(d[].node); d[] = nothing))
-row("LightXML (elem)",    @benchmark (d[] = LightXML.parse_string($S); lightxml_walk(LightXML.root(d[]))) setup = (d = Ref{Any}(nothing)) teardown = (d[] === nothing || LightXML.free(d[]); d[] = nothing))
+row("EzXML",              @benchmark (d[] = EzXML.parsexml($S); ezxml_walk(EzXML.root(d[]))) setup = (d = Ref{Any}(nothing)) teardown = (d[] === nothing || finalize(d[].node); d[] = nothing) evals = 1)
+row("LightXML (elem)",    @benchmark (d[] = LightXML.parse_string($S); lightxml_walk(LightXML.root(d[]))) setup = (d = Ref{Any}(nothing)) teardown = (d[] === nothing || LightXML.free(d[]); d[] = nothing) evals = 1)
 
 println("\n=== (3) DECOMPOSE — XML.jl pipeline stages ===")
 const TREE = parse(S, Node)
@@ -243,7 +243,7 @@ println("\n(the entry either passes the mapping through or rewrites the document
 # difference below belongs to the entity machinery and to nothing else. The twin declares three
 # entities and references them where the plain document carries the words themselves, so those
 # references disappear into the expansion; a fourth word is rewritten as a character reference,
-# which survives the expansion and is what reaches the `:strict` reference check. Both
+# which crosses the expansion and is what reaches the `:strict` reference check. Both
 # populations are needed: `has_entities` is computed after the expansion, so a twin carrying
 # only declared references would leave that check measuring nothing.
 
@@ -339,7 +339,7 @@ for (lbl, s, lz, fl) in (("plain", S, LAZY, FLAT), ("escaped", SESC, LAZY_E, FLA
     row("attr sweep, $lbl",      @benchmark attr_sweep($lz))
     row("FlatNode walk, $lbl",   @benchmark traverse_walk($fl))
     row("EzXML stream, $lbl",    @benchmark ezxml_stream($s))
-    row("EzXML DOM, $lbl",       @benchmark (d[] = EzXML.parsexml($s)) setup = (d = Ref{Any}(nothing)) teardown = (d[] === nothing || finalize(d[].node); d[] = nothing))
+    row("EzXML DOM, $lbl",       @benchmark (d[] = EzXML.parsexml($s)) setup = (d = Ref{Any}(nothing)) teardown = (d[] === nothing || finalize(d[].node); d[] = nothing) evals = 1)
 end
 const DTD_VALUE = XML.value(first(c for c in XML.children(LAZY_M) if XML.nodetype(c) === XML.DTD))
 mrow("parse_dtd, the schema",   @benchmark XML.parse_dtd($DTD_VALUE))
@@ -349,7 +349,7 @@ println("\n(same rows as (1), (2) and (4) over the three documents; the DOCTYPE 
 #--------------------------------------------------------------# (8) WELL-FORMEDNESS LEVELS
 # What `wellformed = :strict` adds over `:structural`: a character-range scan of every text,
 # attribute value, comment, CDATA section and processing-instruction body, and a check of every
-# character reference in a token that carries one. The first scales with the document's text
+# reference in a token that carries one. The first scales with the document's text
 # share, the second with its reference density. The plain document measures the first alone, its
 # escaped twin both, and a document made of the XMark-style document's character data alone puts the text share
 # at one. `:lenient` and `:structural` differ only in the document-shape checks.
@@ -368,7 +368,7 @@ row("text-only :strict",     @benchmark parse($TEXT_ONLY, Node; wellformed = :st
 # libxml2 has no levels: it always enforces well-formedness in full, so its rows are the reference
 # of a parser that checks everything, on the same three documents.
 for (lbl, s) in (("plain", S), ("escaped", SESC), ("text-only", TEXT_ONLY))
-    row("EzXML DOM, $lbl",       @benchmark (d[] = EzXML.parsexml($s)) setup = (d = Ref{Any}(nothing)) teardown = (d[] === nothing || finalize(d[].node); d[] = nothing))
+    row("EzXML DOM, $lbl",       @benchmark (d[] = EzXML.parsexml($s)) setup = (d = Ref{Any}(nothing)) teardown = (d[] === nothing || finalize(d[].node); d[] = nothing) evals = 1)
 end
 println("\n(the character-range scan costs in proportion to the text share; the reference check",
         "\n runs only on a token that carries a `&`, so never on the plain document)")
