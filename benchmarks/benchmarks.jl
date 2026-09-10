@@ -52,18 +52,21 @@ const SSNode = Node{SubString{String}}
 @add_benchmark "Parse (medium)" "XML.jl (SS)" parse($medium_xml, SSNode)
 # C-tree lifetime, small and medium cells alike: LightXML attaches no finalizer, so an unfreed parse
 # leaks its whole tree outright; EzXML attaches one to the document's node, not to the document,
-# so `finalize(doc)` frees nothing and `finalize(doc.node)` is the call — and a benchmark loop
-# allocates too little in Julia to wake the collector, so trees left to it pile up by the
-# gigabyte until the machine pages. Every C-tree cell therefore releases its tree per sample
-# (teardown, untimed; the small parse cells run one evaluation per sample so that the teardown
-# reaches every tree): LightXML.free / finalize(doc.node) — both free C memory without touching
-# the Julia GC, so cell timings are unchanged. XMLDict's internal EzXML document is
-# unreachable from outside and its per-cell C residue is small (~50 MiB per sample at ~14
-# samples); it is left to the between-cell GC.gc() in @add_benchmark — a per-sample
-# collection would reset the young generation inside the cell and hide the GC cost the
-# allocation-heavy conversion incurs in real use.
-@add_benchmark "Parse (medium)" "EzXML" (d[] = EzXML.parsexml($medium_xml)) setup=(d = Ref{Any}(nothing)) teardown=(d[] === nothing || finalize(d[].node); d[] = nothing)
-@add_benchmark "Parse (medium)" "LightXML" (d[] = LightXML.parse_string($medium_xml)) setup=(d = Ref{Any}(nothing)) teardown=(d[] === nothing || LightXML.free(d[]); d[] = nothing)
+# so `finalize(doc)` frees nothing and `finalize(doc.node)` is the call (reported upstream as
+# JuliaIO/EzXML.jl#220) — and a benchmark loop allocates too little in Julia to wake the
+# collector, so trees left to it pile up by the gigabyte until the machine pages. Every cell whose
+# body builds a C tree therefore releases it per sample (teardown, untimed) and runs one
+# evaluation per sample, `evals=1`: BenchmarkTools runs setup and teardown once per sample, and
+# its tuning phase raises the evaluations per sample until a sample lasts long enough, so a cell
+# left to tune builds one tree per evaluation and frees one per sample — about a hundred trees of
+# 120 MB for a 40 ms parse, held until the next full collection. LightXML.free / finalize(doc.node)
+# both free C memory without touching the Julia GC, so cell timings are unchanged. XMLDict's
+# internal EzXML document is unreachable from outside and its per-cell C residue is small
+# (~50 MiB per sample at ~14 samples); it is left to the between-cell GC.gc() in @add_benchmark
+# — a per-sample collection would reset the young generation inside the cell and hide the GC
+# cost the allocation-heavy conversion incurs in real use.
+@add_benchmark "Parse (medium)" "EzXML" (d[] = EzXML.parsexml($medium_xml)) setup=(d = Ref{Any}(nothing)) teardown=(d[] === nothing || finalize(d[].node); d[] = nothing) evals=1
+@add_benchmark "Parse (medium)" "LightXML" (d[] = LightXML.parse_string($medium_xml)) setup=(d = Ref{Any}(nothing)) teardown=(d[] === nothing || LightXML.free(d[]); d[] = nothing) evals=1
 @add_benchmark "Parse (medium)" "XMLDict" XMLDict.xml_dict($medium_xml)
 
 #-----------------------------------------------------------------------------# Write (small)
@@ -78,8 +81,8 @@ const SSNode = Node{SubString{String}}
 
 #-----------------------------------------------------------------------------# Read from file
 @add_benchmark "Read file" "XML.jl" read($medium_file, Node)
-@add_benchmark "Read file" "EzXML" (d[] = EzXML.readxml($medium_file)) setup=(d = Ref{Any}(nothing)) teardown=(d[] === nothing || finalize(d[].node); d[] = nothing)
-@add_benchmark "Read file" "LightXML" (d[] = LightXML.parse_file($medium_file)) setup=(d = Ref{Any}(nothing)) teardown=(d[] === nothing || LightXML.free(d[]); d[] = nothing)
+@add_benchmark "Read file" "EzXML" (d[] = EzXML.readxml($medium_file)) setup=(d = Ref{Any}(nothing)) teardown=(d[] === nothing || finalize(d[].node); d[] = nothing) evals=1
+@add_benchmark "Read file" "LightXML" (d[] = LightXML.parse_file($medium_file)) setup=(d = Ref{Any}(nothing)) teardown=(d[] === nothing || LightXML.free(d[]); d[] = nothing) evals=1
 
 #-----------------------------------------------------------------------------# Collect element tags
 function xml_collect_tags(node)
