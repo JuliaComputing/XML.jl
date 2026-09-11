@@ -349,10 +349,11 @@ println("\n(same rows as (1), (2) and (4) over the three documents; the DOCTYPE 
 #--------------------------------------------------------------# (8) WELL-FORMEDNESS LEVELS
 # What `wellformed = :strict` adds over `:structural`: a character-range scan of every text,
 # attribute value, comment, CDATA section and processing-instruction body, and a check of every
-# reference in a token that carries one. The first scales with the document's text
-# share, the second with its reference density. The plain document measures the first alone, its
-# escaped twin both, and a document made of the XMark-style document's character data alone puts the text share
-# at one. `:lenient` and `:structural` differ only in the document-shape checks.
+# reference in a token that carries one. The first costs by the span it reads, sixteen
+# bytes at a time on a long text and as two 8-byte words on a short one; the second scales
+# with the reference density. The plain document measures the first alone, its escaped twin
+# both, and a document made of the XMark-style document's character data alone puts the
+# text share at one. `:lenient` and `:structural` differ only in the document-shape checks.
 const TEXT_ONLY = string("<doc>", replace(S, r"<[^>]*>" => ""), "</doc>")
 println("\n=== (8) WELL-FORMEDNESS LEVELS — what :strict adds ===")
 println("  text share of the bytes:  plain ", pct(token_shares(S).text), "  escaped ",
