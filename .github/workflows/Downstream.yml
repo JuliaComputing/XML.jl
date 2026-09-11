@@ -5,6 +5,10 @@ on:
     tags: [v*]
   pull_request:
 
+permissions:
+  actions: write
+  contents: read
+
 jobs:
   test:
     name: ${{ matrix.package }} - Julia ${{ matrix.version }}
@@ -28,6 +32,7 @@ jobs:
           version: ${{ matrix.version }}
           arch: x64
           show-versioninfo: true
+      - uses: julia-actions/cache@v3
       - uses: julia-actions/julia-buildpkg@latest
       - name: Load this and run the downstream tests
         shell: julia --color=yes {0}
