@@ -39,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The `:strict` reference check allocated about seven times per reference** ([#142](https://github.com/JuliaData/XML.jl/issues/142)): it matched a regular expression per reference in every token carrying a `&`, in the `Node` and `FlatNode` parses alike. It now reads the token's bytes and allocates nothing, so `:strict` allocates exactly what `:structural` does; what it accepts and rejects is unchanged. On the escaped twin of the benchmarks, `parse(…, Node; wellformed = :strict)` goes from 3,241,570 to 2,658,494 allocations and from 89.8 to 68.9 ms. The decoder behind `unescape` and the check now share one reader of references.
 
+- **The `:strict` character-range scan reads bytes and decodes only what is not ASCII** ([#143](https://github.com/JuliaData/XML.jl/issues/143)): the scan decoded every character of every text, attribute value, comment, CDATA section and processing-instruction body, about 1 ns per byte, more than libxml2 takes to parse the same text. An ASCII byte is now judged in place, a long span sixteen bytes at a time and a short span as two words without a loop; a byte at or above 0x80 is decoded as before, with the same verdict and the same message. On the 8.1 MB of character data of the benchmark document `:strict` adds 0.3 ms to a 0.5 ms parse, from 7.0; on the document itself its cost no longer separates from the run-to-run spread (Table 7 of `PERFORMANCE-v0.4.md`).
+
 ## [0.4.6] - 2026-08-17
 
 ### Fixed

@@ -370,5 +370,5 @@ row("text-only :strict",     @benchmark parse($TEXT_ONLY, Node; wellformed = :st
 for (lbl, s) in (("plain", S), ("escaped", SESC), ("text-only", TEXT_ONLY))
     row("EzXML DOM, $lbl",       @benchmark (d[] = EzXML.parsexml($s)) setup = (d = Ref{Any}(nothing)) teardown = (d[] === nothing || finalize(d[].node); d[] = nothing) evals = 1)
 end
-println("\n(the character-range scan costs in proportion to the text share; the reference check",
+println("\n(the character-range scan costs by the span, not the byte; the reference check",
         "\n runs only on a token that carries a `&`, so never on the plain document)")
