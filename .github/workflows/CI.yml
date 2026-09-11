@@ -76,4 +76,4 @@ jobs:
       - uses: julia-actions/julia-runtest@v1
         with:
           coverage: false
-          julia_args: '--check-bounds=auto'
+          check_bounds: 'auto'
