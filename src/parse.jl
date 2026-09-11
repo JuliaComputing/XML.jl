@@ -123,12 +123,109 @@ _is_xml_char(cp::Integer) =
 # `:strict` only: reject a raw character outside the XML §2.2 Char range (e.g. NUL / C0 controls).
 # Without this, a literal illegal character passes while its &#...; reference form is rejected — a
 # reference-vs-raw asymmetry. DCE'd off the :strict path, so :lenient/:structural cost nothing.
-function _check_chars_strict(s::AbstractString)
-    for c in s
-        _is_xml_char(UInt32(c)) ||
-            error("not well-formed: character U+$(uppercase(string(UInt32(c); base = 16, pad = 4))) is outside the legal XML range (XML 1.0 §2.2)")
+#
+# The range is a byte-level property below 0x80: a byte is legal unless it is a control other than
+# tab, line feed and carriage return. So the check reads the code units and decodes only where a
+# byte at or above 0x80 starts a multi-byte sequence. Two paths, by span length. Most spans a
+# document yields are short — an attribute value, the white space between two tags — and a span
+# of at most 16 bytes is read as two 8-byte words tested without a loop or a data-dependent
+# branch; a longer span is read a block at a time, by a reduction the compiler vectorises. On both
+# paths a flagged byte is followed by a decoding walk over the span, the string's own `Char`
+# iteration, so the verdict, the message and the error on a malformed sequence are those of a
+# `for c in s` loop.
+const _CHAR_SCAN_BLOCK = 64
+const _W_HI = 0x8080808080808080
+const _W_01 = 0x0101010101010101
+const _W_09 = 0x0909090909090909
+const _W_0A = 0x0a0a0a0a0a0a0a0a
+const _W_0D = 0x0d0d0d0d0d0d0d0d
+const _W_20 = 0x2020202020202020
+
+_check_chars_strict(s::AbstractString) = _check_chars_blocks(s)
+
+# A span of a `String` document. Up to 16 bytes, the two words are read from the parent string,
+# where the guard keeps them inside its code units whatever the span's length; `ltoh` makes the
+# first byte of the span the low byte of the word, and the bytes past the span are replaced by
+# spaces before the test.
+@inline function _check_chars_strict(s::SubString{String})
+    n = ncodeunits(s)
+    parent = s.string
+    if n <= 16 && s.offset + 16 <= ncodeunits(parent)
+        GC.@preserve parent begin
+            p = pointer(parent) + s.offset
+            x1 = ltoh(unsafe_load(Ptr{UInt64}(p)))
+            x2 = ltoh(unsafe_load(Ptr{UInt64}(p + 8)))
+        end
+        r1 = min(n, 8)
+        r2 = n - r1
+        m1 = (UInt64(1) << (8r1)) - 1        # a shift by 64 gives 0, so eight bytes give all ones
+        m2 = (UInt64(1) << (8r2)) - 1
+        x1 = (x1 & m1) | (~m1 & _W_20)
+        x2 = (x2 & m2) | (~m2 & _W_20)
+        (_word_flagged(x1) | _word_flagged(x2)) || return nothing
+        _check_chars_decoding(s, codeunits(s), 1, n)
+        return nothing
     end
+    return _check_chars_blocks(s)
 end
+
+# `true` when a byte of the word is at or above 0x80, or a control other than tab, line feed and
+# carriage return. Each per-byte test is exact for a byte below 0x80; a byte at or above 0x80 is
+# flagged by its high bit whatever the other tests make of it.
+@inline function _word_flagged(x::UInt64)
+    hi = x & _W_HI
+    lt = ~((x | _W_HI) - _W_20) & _W_HI
+    is9 = ~(((x ⊻ _W_09) | _W_HI) - _W_01) & _W_HI
+    is10 = ~(((x ⊻ _W_0A) | _W_HI) - _W_01) & _W_HI
+    is13 = ~(((x ⊻ _W_0D) | _W_HI) - _W_01) & _W_HI
+    return (hi | (lt & ~(is9 | is10 | is13))) != 0
+end
+
+@noinline function _check_chars_blocks(s::AbstractString)
+    cu = codeunits(s)
+    n = length(cu)
+    i = 1
+    while i <= n
+        j = min(i + _CHAR_SCAN_BLOCK - 1, n)
+        i = _ascii_block_legal(cu, i, j) ? j + 1 : _check_chars_decoding(s, cu, i, j)
+    end
+    return nothing
+end
+
+# `true` when every byte of `cu[i:j]` is a legal ASCII character: below 0x80 (a byte at or above
+# starts or continues a multi-byte sequence, which the decode judges) and not a control other than
+# tab, line feed and carriage return. A reduction without an early exit, which the compiler
+# vectorises.
+@inline function _ascii_block_legal(cu, i::Int, j::Int)
+    flagged = false
+    @inbounds for k in i:j
+        b = cu[k]
+        flagged |= (b >= 0x80) | ((b < 0x20) & (b != 0x09) & (b != 0x0A) & (b != 0x0D))
+    end
+    return !flagged
+end
+
+# The decoding walk over `cu[i:j]`, taken after a flagged byte. An ASCII byte is judged in place;
+# at a byte at or above 0x80 the string's `Char` iteration decodes the sequence from that index,
+# which may run past `j`. Returns the index after the last byte consumed.
+@noinline function _check_chars_decoding(s::AbstractString, cu, i::Int, j::Int)
+    k = i
+    @inbounds while k <= j
+        b = cu[k]
+        if b < 0x80
+            (b >= 0x20 || b == 0x09 || b == 0x0A || b == 0x0D) || _char_range_error(UInt32(b))
+            k += 1
+        else
+            c, k = @something iterate(s, k)
+            cp = UInt32(c)      # raises `Base.InvalidCharError` on a malformed sequence, as `for c in s` does
+            _is_xml_char(cp) || _char_range_error(cp)
+        end
+    end
+    return k
+end
+
+@noinline _char_range_error(cp::UInt32) =
+    error("not well-formed: character U+$(uppercase(string(cp; base = 16, pad = 4))) is outside the legal XML range (XML 1.0 §2.2)")
 
 # `:strict` only, one pass over a span's references, character and named alike. Gated + DCE'd off
 # the :strict path and called only when a token carries entities, so :lenient/:structural cost

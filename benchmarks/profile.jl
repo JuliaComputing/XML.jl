@@ -349,10 +349,12 @@ println("\n(same rows as (1), (2) and (4) over the three documents; the DOCTYPE 
 #--------------------------------------------------------------# (8) WELL-FORMEDNESS LEVELS
 # What `wellformed = :strict` adds over `:structural`: a character-range scan of every text,
 # attribute value, comment, CDATA section and processing-instruction body, and a check of every
-# reference in a token that carries one. The first scales with the document's text
-# share, the second with its reference density. The plain document measures the first alone, its
-# escaped twin both, and a document made of the XMark-style document's character data alone puts the text share
-# at one. `:lenient` and `:structural` differ only in the document-shape checks.
+# reference in a token that carries one. The first costs by the span it reads: a long text
+# in a loop that checks 64 bytes at a time with vector instructions, a short span of 16
+# bytes or less as two 8-byte words without any loop; the second scales with the reference
+# density. The plain document measures the first alone, its escaped twin both, and a
+# document made of the XMark-style document's character data alone puts the text share at
+# one. `:lenient` and `:structural` differ only in the document-shape checks.
 const TEXT_ONLY = string("<doc>", replace(S, r"<[^>]*>" => ""), "</doc>")
 println("\n=== (8) WELL-FORMEDNESS LEVELS — what :strict adds ===")
 println("  text share of the bytes:  plain ", pct(token_shares(S).text), "  escaped ",
@@ -370,5 +372,5 @@ row("text-only :strict",     @benchmark parse($TEXT_ONLY, Node; wellformed = :st
 for (lbl, s) in (("plain", S), ("escaped", SESC), ("text-only", TEXT_ONLY))
     row("EzXML DOM, $lbl",       @benchmark (d[] = EzXML.parsexml($s)) setup = (d = Ref{Any}(nothing)) teardown = (d[] === nothing || finalize(d[].node); d[] = nothing) evals = 1)
 end
-println("\n(the character-range scan costs in proportion to the text share; the reference check",
+println("\n(the character-range scan costs by the span, not the byte; the reference check",
         "\n runs only on a token that carries a `&`, so never on the plain document)")

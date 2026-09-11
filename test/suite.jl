@@ -303,6 +303,75 @@ end
         # :structural (default) and :lenient do not enforce the Char range (ref or raw)
         @test nodetype(parse("<root>&#0;</root>", Node)) == Document
         @test nodetype(parse("<root>a\x00b</root>", Node)) == Document
+
+        # The scan judges an ASCII byte in place and decodes only a byte at or above 0x80. Tab, line
+        # feed and carriage return are the only legal bytes below 0x20; DEL (0x7F) is legal; the raw
+        # forms of the surrogate block and of U+FFFE/U+FFFF are rejected like their references.
+        for s in ("a\tb\nc\rd", "\x7f", "é漢😀", "�퟿", "\U10FFFF")
+            @test nodetype(parse("<root>$s</root>", Node; wellformed=:strict)) == Document
+        end
+        for (s, cp) in (("\x01", "0001"), ("\x0b", "000B"), ("\x0c", "000C"), ("\x1f", "001F"),
+                        ("￾", "FFFE"), ("￿", "FFFF"), ("\xed\xa0\x80", "D800"), ("\xed\xbf\xbf", "DFFF"))
+            @test_throws "character U+$cp is outside the legal XML range" parse("<root>$s</root>", Node; wellformed=:strict)
+        end
+        # A malformed sequence is not a character: the decode raises `Base.InvalidCharError`.
+        @test_throws Base.InvalidCharError parse("<root>a\xffb</root>", Node; wellformed=:strict)
+        @test_throws Base.InvalidCharError parse("<root>a\xc0\x80b</root>", Node; wellformed=:strict)
+
+        # The decoding loop the scan replaces is its specification: the same verdict, message or
+        # exception on every code point, on every short byte sequence of an alphabet that covers the
+        # lead, continuation, control and boundary bytes (the four-byte ones from a smaller alphabet, since
+        # nearly every one throws), and at every position within the words and the blocks the scan reads.
+        # A span of a `String` document is a `SubString{String}`, read by the short path when it is at most
+        # 16 bytes long with 16 bytes of the parent past its start, by the block scan otherwise: every case
+        # goes through both, and through a `StringView`.
+        function charscan_reference(s)
+            for c in s
+                XML._is_xml_char(UInt32(c)) || error("not well-formed: character U+$(uppercase(string(UInt32(c); base = 16, pad = 4))) is outside the legal XML range (XML 1.0 §2.2)")
+            end
+            return nothing
+        end
+        function outcome(f, s)
+            try
+                f(s)
+                "accepted"
+            catch e
+                e isa ErrorException ? e.msg : string(typeof(e))
+            end
+        end
+        agree(s) = outcome(XML._check_chars_strict, s) == outcome(charscan_reference, s)
+        within(s) = (t = "<" * s * ">" * "x"^16; SubString(t, 2, thisind(t, ncodeunits(s) + 1)))
+        at_end(s) = (t = "<" * s * ">"; SubString(t, 2, thisind(t, ncodeunits(s) + 1)))
+        @test findfirst(cp -> !agree(string(Char(cp))), 0x0:0x10FFFF) === nothing
+        @test findfirst(cp -> !agree(within(string(Char(cp)))), 0x0:0x10FFFF) === nothing
+        alphabet = UInt8[0x00, 0x09, 0x0a, 0x0d, 0x1f, 0x20, 0x41, 0x7f, 0x80, 0xbf, 0xc0, 0xc2, 0xdf, 0xe0, 0xed, 0xef, 0xf0, 0xf4, 0xf5, 0xff]
+        alphabet4 = UInt8[0x00, 0x0a, 0x41, 0x80, 0xbf, 0xc2, 0xed, 0xf0, 0xf4, 0xf5]
+        seqs = String[]
+        for b1 in alphabet
+            push!(seqs, String([b1]))
+            for b2 in alphabet
+                push!(seqs, String([b1, b2]))
+                for b3 in alphabet
+                    push!(seqs, String([b1, b2, b3]))
+                end
+            end
+        end
+        for b1 in alphabet4, b2 in alphabet4, b3 in alphabet4, b4 in alphabet4
+            push!(seqs, String([b1, b2, b3, b4]))
+        end
+        @test length(seqs) == 20 + 400 + 8_000 + 10_000
+        @test findfirst(!agree, seqs) === nothing
+        @test findfirst(s -> !agree(within(s)), seqs) === nothing
+        placed = String[]
+        cases = ("é", "漢", "😀", "￾", "￿", "�", "\xed\xa0\x80", "\xc0\x80", "\xe0\x80\x80", "\xf0\x80\x80\x80",
+                 "\xf4\x90\x80\x80", "\xf5\x80\x80\x80", "\xe2\x82", "\xef\xbf\xbe", "\xf4\x8f\xbf\xbf", "\x01", "\x1f", "\x7f")
+        for s in Iterators.flatten((seqs[1:420], cases)), pad in Iterators.flatten((0:17, 62:66, 126:130, 254:258)), tail in ("", "b\x01c")
+            push!(placed, repeat("a", pad) * s * tail)
+        end
+        @test findfirst(!agree, placed) === nothing
+        @test findfirst(s -> !agree(within(s)), placed) === nothing
+        @test findfirst(s -> !agree(at_end(s)), placed) === nothing
+        @test findfirst(s -> !agree(StringView(codeunits(s))), placed) === nothing
     end
 end
 

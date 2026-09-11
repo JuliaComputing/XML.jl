@@ -287,3 +287,27 @@ measure_parse_structural(xml) = Base.@allocations parse(xml, Node; wellformed = 
         @test measure_parse_strict(refs_xml) == measure_parse_structural(refs_xml)
     end
 end
+
+# `:strict` character-range scan — the contract: the scan reads the code units and copies nothing on
+# a span it accepts, ASCII or not, on both of its paths and for a `String`, a `SubString` and a
+# `StringView`; the parse-level guard above holds `:strict` to the count of `:structural` across
+# the scan too.
+measure_charscan(s) = Base.@allocations XML._check_chars_strict(s)
+
+@testset ":strict character-range scan: allocation-free on an accepted span" begin
+    ascii = repeat("The quick brown fox jumps over the lazy dog.\t\r\n", 40)
+    mixed = repeat("naïve café, 漢字 😀 ", 40)
+    long = SubString("<" * mixed * ">", 2, ncodeunits(mixed) + 1)
+    short = SubString(ascii, 1, 12)                            # the two-word path
+    last = SubString(ascii, ncodeunits(ascii) - 5, ncodeunits(ascii))   # too close to the end for it
+    view = StringView(codeunits(ascii))
+    for s in (ascii, mixed, long, short, last, view)
+        @test XML._check_chars_strict(s) === nothing
+        measure_charscan(s)                                                   # warm-up
+    end
+    if _NO_COVERAGE
+        for s in (ascii, mixed, long, short, last, view)
+            @test measure_charscan(s) == 0
+        end
+    end
+end
