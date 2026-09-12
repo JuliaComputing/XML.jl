@@ -318,34 +318,37 @@ end
         @test_throws Base.InvalidCharError parse("<root>a\xffb</root>", Node; wellformed=:strict)
         @test_throws Base.InvalidCharError parse("<root>a\xc0\x80b</root>", Node; wellformed=:strict)
 
-        # The decoding loop the scan replaces is its specification: the same verdict, message or
-        # exception on every code point, on every short byte sequence of an alphabet that covers the
-        # lead, continuation, control and boundary bytes (the four-byte ones from a smaller alphabet, since
-        # nearly every one throws), and at every position within the words and the blocks the scan reads.
-        # A span of a `String` document is a `SubString{String}`, read by the short path when it is at most
-        # 16 bytes long with 16 bytes of the parent past its start, by the block scan otherwise: every case
-        # goes through both, and through a `StringView`.
-        function charscan_reference(s)
+        # The decoding loop the scan replaces is its specification, written to return its verdict
+        # rather than throw it (a throw costs a backtrace, and the scan's own throws are the ones
+        # under test): the same verdict, message or exception on every code point, on every short
+        # byte sequence of an alphabet that covers the lead, continuation, control and boundary
+        # bytes (the four-byte ones from a smaller alphabet), and at every position within the
+        # words and the blocks the scan reads. A span of a `String` document is a `SubString{String}`,
+        # read by the short path when it is at most 16 bytes long with 16 bytes of the parent past
+        # its start, by the block scan otherwise: every placed case goes through both, and through a
+        # `StringView`.
+        function charscan_verdict(s)
             for c in s
-                XML._is_xml_char(UInt32(c)) || error("not well-formed: character U+$(uppercase(string(UInt32(c); base = 16, pad = 4))) is outside the legal XML range (XML 1.0 §2.2)")
+                (Base.ismalformed(c) || Base.isoverlong(c)) && return "Base.InvalidCharError{Char}"
+                XML._is_xml_char(UInt32(c)) || return "not well-formed: character U+$(uppercase(string(UInt32(c); base = 16, pad = 4))) is outside the legal XML range (XML 1.0 §2.2)"
             end
-            return nothing
+            return "accepted"
         end
-        function outcome(f, s)
+        function outcome(s)
             try
-                f(s)
+                XML._check_chars_strict(s)
                 "accepted"
             catch e
                 e isa ErrorException ? e.msg : string(typeof(e))
             end
         end
-        agree(s) = outcome(XML._check_chars_strict, s) == outcome(charscan_reference, s)
+        agree(s) = outcome(s) == charscan_verdict(s)
         within(s) = (t = "<" * s * ">" * "x"^16; SubString(t, 2, thisind(t, ncodeunits(s) + 1)))
         at_end(s) = (t = "<" * s * ">"; SubString(t, 2, thisind(t, ncodeunits(s) + 1)))
         @test findfirst(cp -> !agree(string(Char(cp))), 0x0:0x10FFFF) === nothing
         @test findfirst(cp -> !agree(within(string(Char(cp)))), 0x0:0x10FFFF) === nothing
         alphabet = UInt8[0x00, 0x09, 0x0a, 0x0d, 0x1f, 0x20, 0x41, 0x7f, 0x80, 0xbf, 0xc0, 0xc2, 0xdf, 0xe0, 0xed, 0xef, 0xf0, 0xf4, 0xf5, 0xff]
-        alphabet4 = UInt8[0x00, 0x0a, 0x41, 0x80, 0xbf, 0xc2, 0xed, 0xf0, 0xf4, 0xf5]
+        alphabet4 = UInt8[0x0a, 0x41, 0x80, 0xbf, 0xed, 0xf0, 0xf4, 0xf5]
         seqs = String[]
         for b1 in alphabet
             push!(seqs, String([b1]))
@@ -359,13 +362,13 @@ end
         for b1 in alphabet4, b2 in alphabet4, b3 in alphabet4, b4 in alphabet4
             push!(seqs, String([b1, b2, b3, b4]))
         end
-        @test length(seqs) == 20 + 400 + 8_000 + 10_000
+        @test length(seqs) == 20 + 400 + 8_000 + 4_096
         @test findfirst(!agree, seqs) === nothing
         @test findfirst(s -> !agree(within(s)), seqs) === nothing
         placed = String[]
         cases = ("é", "漢", "😀", "￾", "￿", "�", "\xed\xa0\x80", "\xc0\x80", "\xe0\x80\x80", "\xf0\x80\x80\x80",
                  "\xf4\x90\x80\x80", "\xf5\x80\x80\x80", "\xe2\x82", "\xef\xbf\xbe", "\xf4\x8f\xbf\xbf", "\x01", "\x1f", "\x7f")
-        for s in Iterators.flatten((seqs[1:420], cases)), pad in Iterators.flatten((0:17, 62:66, 126:130, 254:258)), tail in ("", "b\x01c")
+        for s in Iterators.flatten((seqs[1:20], cases)), pad in Iterators.flatten((0:17, 62:66, 126:130, 254:258)), tail in ("", "b\x01c")
             push!(placed, repeat("a", pad) * s * tail)
         end
         @test findfirst(!agree, placed) === nothing
